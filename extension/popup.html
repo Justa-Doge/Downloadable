@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Downloadable</title>
+    <link rel="stylesheet" href="popup.css">
+  </head>
+  <body>
+    <main>
+      <h1>Downloadable</h1>
+      <p id="video-title" class="video-title">Reading current tab…</p>
+
+      <label class="url-label" for="media-url">YouTube or TikTok link</label>
+      <input id="media-url" class="url-input" type="url" inputmode="url"
+        placeholder="Paste a video, Short, TikTok, or TikTok sound link">
+
+      <section class="destination">
+        <div class="folder-setting">
+          <span>MP3 folder</span>
+          <button class="folder-button" data-format="mp3" type="button">Choose…</button>
+          <p id="mp3-folder-path" title="">No folder selected</p>
+        </div>
+        <div class="folder-setting">
+          <span>MP4 folder</span>
+          <button class="folder-button" data-format="mp4" type="button">Choose…</button>
+          <p id="mp4-folder-path" title="">No folder selected</p>
+        </div>
+      </section>
+
+      <div class="format-buttons">
+        <button class="download-button mp3" data-format="mp3" type="button">
+          <strong>MP3</strong>
+          <span>Audio + music tags</span>
+        </button>
+        <button class="download-button mp4" data-format="mp4" type="button">
+          <strong>MP4</strong>
+          <span>Video + audio</span>
+        </button>
+      </div>
+
+      <div id="progress-wrap" class="progress-wrap" hidden>
+        <div class="progress-track"><div id="progress-bar"></div></div>
+        <p id="progress-text">Starting…</p>
+      </div>
+
+      <p id="status" class="status" role="status"></p>
+      <p class="legal">Supports YouTube videos and TikTok videos, photos, and sound pages. For a TikTok sound, choose MP3. Only download media you have permission to save.</p>
+    </main>
+    <script src="config.js"></script>
+    <script src="popup.js"></script>
+  </body>
+</html>
