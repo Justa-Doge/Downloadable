@@ -292,7 +292,7 @@ def run_download(job_id: str, url: str, output_format: str, destination: Path) -
         command += ["--playlist-end", "1"]
     command.append(url)
 
-    update_job(job_id, status="downloading", message="Starting download…")
+    update_job(job_id, status="downloading", message="Connecting to video site…")
     process = subprocess.Popen(
         command,
         stdout=subprocess.PIPE,
@@ -312,7 +312,7 @@ def run_download(job_id: str, url: str, output_format: str, destination: Path) -
         if line.startswith("RESULT:"):
             result_path = Path(line.removeprefix("RESULT:"))
             continue
-        match = re.search(r"download:\s*([\d.]+)%\|([^|]*)\|([^|]*)", line)
+        match = re.search(r"download:\s*([\d.]+)\s*%\|([^|]*)\|([^|]*)", line)
         if match:
             progress = float(match.group(1))
             speed = match.group(2).strip()
@@ -323,8 +323,14 @@ def run_download(job_id: str, url: str, output_format: str, destination: Path) -
             if eta and eta != "N/A":
                 message += f" · ETA {eta}"
             update_job(job_id, progress=progress, message=message)
-        elif line.startswith("[ExtractAudio]") or line.startswith("[VideoConvertor]"):
-            update_job(job_id, progress=99, message="Converting…")
+        elif line.startswith("[ExtractAudio]"):
+            update_job(job_id, progress=99, message="Converting to MP3…")
+        elif line.startswith("[Merger]") or line.startswith("[VideoConvertor]"):
+            update_job(job_id, progress=99, message="Merging video and audio…")
+        elif line.startswith("[download] Destination"):
+            update_job(job_id, message="Downloading media…")
+        elif line.startswith("[youtube]") and "Downloading" in line:
+            update_job(job_id, message="Preparing YouTube streams…")
 
     return_code = process.wait()
     if return_code != 0:
@@ -382,7 +388,9 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json(403, {"error": "Helper authentication failed. Run setup.command again."})
             return False
         origin = self.headers.get("Origin", "")
-        if not origin.startswith("chrome-extension://"):
+        # Chrome may omit Origin on a privileged extension request. The token is
+        # still required; reject an explicit non-extension Origin from a web page.
+        if origin and not origin.startswith("chrome-extension://"):
             self.send_json(403, {"error": "Requests are accepted only from a Chrome extension."})
             return False
         return True

@@ -55,6 +55,22 @@ class FolderPickerTests(unittest.TestCase):
 
 
 class SharedHelperTests(unittest.TestCase):
+    def test_extension_request_without_origin_uses_token(self):
+        handler = object.__new__(helper.Handler)
+        handler.headers = {"X-Helper-Token": "test-token"}
+        handler.send_json = mock.Mock()
+        with mock.patch.object(helper, "TOKEN", "test-token"):
+            self.assertTrue(handler.authenticated())
+        handler.send_json.assert_not_called()
+
+    def test_web_page_origin_is_rejected_even_with_token(self):
+        handler = object.__new__(helper.Handler)
+        handler.headers = {"X-Helper-Token": "test-token", "Origin": "https://example.com"}
+        handler.send_json = mock.Mock()
+        with mock.patch.object(helper, "TOKEN", "test-token"):
+            self.assertFalse(handler.authenticated())
+        handler.send_json.assert_called_once()
+
     def test_manifest_used_by_update_check_exists(self):
         manifest = helper.ROOT / "extension" / "manifest.json"
         self.assertTrue(manifest.is_file())
