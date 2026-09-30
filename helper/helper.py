@@ -11,6 +11,8 @@ import subprocess
 import sys
 import threading
 import uuid
+import tkinter as tk
+from tkinter import filedialog
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
@@ -50,6 +52,14 @@ def save_state(state: dict) -> None:
 
 def choose_folder(output_format: str) -> str:
     description = "MP3 audio" if output_format == "mp3" else "MP4 video"
+    if os.name == "nt":
+        root = tk.Tk()
+        root.withdraw()
+        selected = filedialog.askdirectory(title=f"Choose where {description} should be saved")
+        root.destroy()
+        if not selected:
+            raise ValueError("Folder selection canceled.")
+        return str(Path(selected).resolve())
     script = f"""
         tell application "Finder"
             activate
@@ -109,7 +119,7 @@ def update_job(job_id: str, **changes: object) -> None:
 def run_download(job_id: str, url: str, output_format: str, destination: Path) -> None:
     output_template = str(destination / "%(title).180B [%(id)s].%(ext)s")
     command = [
-        str(ROOT / ".venv" / "bin" / "yt-dlp"),
+        str(ROOT / ".venv" / ("Scripts" if os.name == "nt" else "bin") / ("yt-dlp.exe" if os.name == "nt" else "yt-dlp")),
         "--newline",
         "--no-playlist",
         "--no-overwrites",
@@ -322,11 +332,11 @@ class Handler(BaseHTTPRequestHandler):
 
 def main() -> None:
     if not TOKEN:
-        print("Missing helper token. Run setup.command first.", file=sys.stderr)
+        print("Missing helper token. Run setup.command or setup.ps1 first.", file=sys.stderr)
         raise SystemExit(1)
-    yt_dlp = ROOT / ".venv" / "bin" / "yt-dlp"
+    yt_dlp = ROOT / ".venv" / ("Scripts" if os.name == "nt" else "bin") / ("yt-dlp.exe" if os.name == "nt" else "yt-dlp")
     if not yt_dlp.exists():
-        print("yt-dlp is not installed. Run setup.command first.", file=sys.stderr)
+        print("yt-dlp is not installed. Run setup.command or setup.ps1 first.", file=sys.stderr)
         raise SystemExit(1)
     if not shutil.which("ffmpeg"):
         print("ffmpeg is not installed or is not on PATH.", file=sys.stderr)

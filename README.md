@@ -1,6 +1,6 @@
 # Personal Video & Audio Downloader
 
-A Chrome extension for saving a YouTube or TikTok video as MP3 or MP4 to a folder you choose. It uses a small local macOS helper because Chrome extensions cannot directly combine media streams or write to arbitrary folders.
+A Chrome extension for saving a YouTube or TikTok video as MP3 or MP4 to a folder you choose. It uses a small local helper because Chrome extensions cannot directly combine media streams or write to arbitrary folders.
 
 Use this only with videos you own, public-domain material, or videos whose owner has authorized downloads. The platforms' official offline features are the appropriate option for other videos.
 
@@ -17,18 +17,25 @@ For CapCut, choose the folder where you keep edit audio, download as **MP3**, th
 
 YouTube and YouTube Music MP3 downloads include the source thumbnail as cover art and embed available music metadata such as title, artist, album, date, and duration. Dedicated or officially identified music uploads usually provide the richest tags; the helper does not invent missing artist or album information.
 
-The MP3 and MP4 folders are remembered separately in both the local helper and Chrome's extension storage. This Mac preserves the previously selected music folder for MP3 and defaults MP4 downloads to the Movies folder. Only one download runs at a time.
+## Install on Windows
+
+1. Install Python 3.11+ and FFmpeg (`winget install Python.Python.3.11` and `winget install Gyan.FFmpeg`).
+2. Right-click `setup.ps1`, choose **Run with PowerShell**, and allow script execution if Windows asks.
+3. Run `start.ps1` and leave that PowerShell window open while downloading.
+4. In Chrome, open `chrome://extensions`, enable **Developer mode**, and choose **Load unpacked**. Select this project's `extension` folder.
+
+The MP3 and MP4 folders are remembered separately in both the local helper and Chrome's extension storage. Only one download runs at a time.
 
 ## Requirements
 
-- macOS
+- macOS or Windows 10/11
 - Google Chrome or another Chromium browser
 - Internet access during initial setup
 - `ffmpeg` available on the command line (already present on the Mac this was built for)
 
 ## Troubleshooting
 
-- **Local helper is not running:** double-click `start.command` and leave the Terminal window open.
+- **Local helper is not running:** on macOS, double-click `start.command`; on Windows, run `start.ps1`. Keep the terminal window open.
 - **Authentication failed:** run `setup.command` again, then click Reload on the extension's card at `chrome://extensions`.
 - **Video requires sign-in:** this first version intentionally does not read browser cookies. Use YouTube's official download feature for restricted videos.
 - **YouTube or TikTok changed something:** run `setup.command` again to update `yt-dlp`, then reload the extension.
@@ -36,4 +43,4 @@ The MP3 and MP4 folders are remembered separately in both the local helper and C
 
 ## Privacy and security
 
-The helper listens only on `127.0.0.1`, accepts requests only from Chrome-extension pages, and requires a random local token generated during setup. URLs and folder choices stay on this Mac except for the normal requests made to the selected media site by `yt-dlp`.
+The helper listens only on `127.0.0.1`, accepts requests only from Chrome-extension pages, and requires a random local token generated during setup. URLs and folder choices stay on this computer except for the normal requests made to the selected media site by `yt-dlp`.
