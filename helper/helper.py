@@ -11,6 +11,7 @@ import subprocess
 import sys
 import threading
 import uuid
+import urllib.error
 import urllib.request
 import zipfile
 try:
@@ -44,7 +45,7 @@ def version_tuple(value: str) -> tuple[int, ...]:
 
 def check_for_update() -> None:
     try:
-        current = json.loads((ROOT / ".." / "extension" / "manifest.json").read_text(encoding="utf-8"))["version"]
+        current = json.loads((ROOT / "extension" / "manifest.json").read_text(encoding="utf-8"))["version"]
         request = urllib.request.Request(RELEASE_API, headers={"Accept": "application/vnd.github+json", "User-Agent": "Downloadable-Updater"})
         with urllib.request.urlopen(request, timeout=20) as response:
             release = json.loads(response.read().decode("utf-8"))
@@ -58,6 +59,10 @@ def check_for_update() -> None:
         urllib.request.urlretrieve(asset["browser_download_url"], update_path)
         (ROOT / ".update-available.json").write_text(json.dumps({"version": latest, "release_url": release.get("html_url", ""), "asset": asset["name"]}, indent=2), encoding="utf-8")
         print(f"Update {latest} downloaded. Restart the helper to apply it.")
+    except urllib.error.HTTPError as error:
+        if error.code == 404:  # Private repositories are intentionally invisible without credentials.
+            return
+        print(f"Update check skipped: {error}")
     except Exception as error:
         print(f"Update check skipped: {error}")
 
@@ -130,13 +135,25 @@ def choose_folder(output_format: str) -> str:
 
         display_name = ctypes.create_unicode_buffer(260)
         info = BROWSEINFO(
-            None, None, display_name, f"Choose where {description} should be saved",
+            None, None, ctypes.cast(display_name, wintypes.LPWSTR), f"Choose where {description} should be saved",
             0x0001 | 0x0040, None, 0, 0,
         )
         shell32 = ctypes.windll.shell32
         ole32 = ctypes.windll.ole32
-        ole32.CoInitialize(None)
+        shell32.SHBrowseForFolderW.argtypes = [ctypes.POINTER(BROWSEINFO)]
         shell32.SHBrowseForFolderW.restype = ctypes.c_void_p
+        shell32.SHGetPathFromIDListW.argtypes = [ctypes.c_void_p, wintypes.LPWSTR]
+        shell32.SHGetPathFromIDListW.restype = wintypes.BOOL
+        ole32.CoInitializeEx.argtypes = [ctypes.c_void_p, wintypes.DWORD]
+        ole32.CoInitializeEx.restype = ctypes.c_long
+        ole32.CoTaskMemFree.argtypes = [ctypes.c_void_p]
+        ole32.CoTaskMemFree.restype = None
+        ole32.CoUninitialize.argtypes = []
+        ole32.CoUninitialize.restype = None
+        com_result = ole32.CoInitializeEx(None, 0x2)  # COINIT_APARTMENTTHREADED
+        com_initialized = com_result in (0, 1)  # S_OK or S_FALSE
+        if com_result < 0 and com_result != -2147417850:  # RPC_E_CHANGED_MODE is usable here.
+            raise OSError(f"Windows could not initialize the folder picker (0x{com_result & 0xFFFFFFFF:08X}).")
         try:
             pidl = shell32.SHBrowseForFolderW(ctypes.byref(info))
             if not pidl:
@@ -148,7 +165,8 @@ def choose_folder(output_format: str) -> str:
         finally:
             if 'pidl' in locals() and pidl:
                 ole32.CoTaskMemFree(pidl)
-            ole32.CoUninitialize()
+            if com_initialized:
+                ole32.CoUninitialize()
     script = f"""
         tell application "Finder"
             activate
@@ -434,7 +452,13 @@ def main() -> None:
     print(f"Personal Video & Audio Downloader helper is running at http://{HOST}:{PORT}")
     threading.Thread(target=update_loop, daemon=True).start()
     print("Keep this window open while downloading. Press Control-C to stop.")
-    ThreadingHTTPServer((HOST, PORT), Handler).serve_forever()
+    server = ThreadingHTTPServer((HOST, PORT), Handler)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print("Downloadable helper stopped.")
+    finally:
+        server.server_close()
 
 
 if __name__ == "__main__":

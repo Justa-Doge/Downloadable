@@ -1,8 +1,13 @@
 $ErrorActionPreference = "Stop"
 try {
   Set-Location $PSScriptRoot
+  $links = Join-Path $env:LOCALAPPDATA "Microsoft\WinGet\Links"
+  if (Test-Path -LiteralPath $links) {
+    $entries = $env:PATH -split ";"
+    if ($entries -notcontains $links) { $env:PATH = "$links;$env:PATH" }
+  }
   if (-not (Test-Path ".venv\Scripts\python.exe")) {
-    throw "Python environment is missing. Run setup.ps1 first."
+    throw "Python environment is missing. Run setup.cmd first."
   }
   & ".venv\Scripts\python.exe" "helper\helper.py"
   if ($LASTEXITCODE -ne 0) { throw "The helper exited with code $LASTEXITCODE." }

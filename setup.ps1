@@ -2,12 +2,43 @@ $ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot
 
 Write-Host "Setting up Downloadable..."
-if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue)) {
-  throw "ffmpeg is required. Install it with winget install Gyan.FFmpeg, then run setup.ps1 again."
+function Add-DownloadableToolPath {
+  $links = Join-Path $env:LOCALAPPDATA "Microsoft\WinGet\Links"
+  if (Test-Path -LiteralPath $links) {
+    $entries = $env:PATH -split ";"
+    if ($entries -notcontains $links) { $env:PATH = "$links;$env:PATH" }
+  }
+  if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue)) {
+    $packages = Join-Path $env:LOCALAPPDATA "Microsoft\WinGet\Packages"
+    if (Test-Path -LiteralPath $packages) {
+      $ffmpeg = Get-ChildItem -LiteralPath $packages -Directory -Filter "Gyan.FFmpeg*" -ErrorAction SilentlyContinue |
+        ForEach-Object { Get-ChildItem -LiteralPath $_.FullName -Recurse -File -Filter "ffmpeg.exe" -ErrorAction SilentlyContinue } |
+        Select-Object -First 1
+      if ($ffmpeg) { $env:PATH = "$($ffmpeg.DirectoryName);$env:PATH" }
+    }
+  }
 }
 
-py -m venv .venv
+Add-DownloadableToolPath
+if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue)) {
+  throw "ffmpeg is required. Install it with winget install Gyan.FFmpeg, then run setup.cmd again."
+}
+
+$launcher = Get-Command py -ErrorAction SilentlyContinue
+if ($launcher) {
+  & $launcher.Source -3 -c "import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)"
+  if ($LASTEXITCODE -ne 0) { throw "Python 3.11 or newer is required." }
+  & $launcher.Source -3 -m venv .venv
+} else {
+  $launcher = Get-Command python -ErrorAction SilentlyContinue
+  if (-not $launcher) { throw "Python 3.11 or newer is required. Install it with winget install Python.Python.3.11." }
+  & $launcher.Source -c "import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)"
+  if ($LASTEXITCODE -ne 0) { throw "Python 3.11 or newer is required." }
+  & $launcher.Source -m venv .venv
+}
+if ($LASTEXITCODE -ne 0 -or -not (Test-Path ".venv\Scripts\python.exe")) { throw "Python could not create the local environment." }
 & ".venv\Scripts\python.exe" -m pip install --upgrade pip yt-dlp mutagen
+if ($LASTEXITCODE -ne 0) { throw "Python packages could not be installed." }
 
 if (-not (Test-Path .helper-token)) {
   $token = (& ".venv\Scripts\python.exe" -c "import secrets; print(secrets.token_urlsafe(32))").Trim()
