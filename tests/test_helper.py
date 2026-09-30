@@ -55,6 +55,22 @@ class FolderPickerTests(unittest.TestCase):
 
 
 class SharedHelperTests(unittest.TestCase):
+    def test_download_process_stays_hidden_on_windows(self):
+        job_id = "test-hidden-download"
+        helper.JOBS[job_id] = {"status": "queued", "progress": 0, "message": "Queued…"}
+        try:
+            with tempfile.TemporaryDirectory() as directory:
+                with mock.patch.object(helper.subprocess, "Popen") as popen:
+                    popen.return_value.stdout = io.StringIO("")
+                    popen.return_value.wait.return_value = 0
+                    helper.run_download(job_id, "https://www.youtube.com/watch?v=test", "mp4", Path(directory))
+            if helper.os.name == "nt":
+                self.assertEqual(popen.call_args.kwargs["creationflags"], helper.subprocess.CREATE_NO_WINDOW)
+            else:
+                self.assertNotIn("creationflags", popen.call_args.kwargs)
+        finally:
+            del helper.JOBS[job_id]
+
     def test_extension_request_without_origin_uses_token(self):
         handler = object.__new__(helper.Handler)
         handler.headers = {"X-Helper-Token": "test-token"}

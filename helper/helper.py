@@ -300,6 +300,7 @@ def run_download(job_id: str, url: str, output_format: str, destination: Path) -
         text=True,
         encoding="utf-8",
         errors="replace",
+        **({"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt" else {}),
     )
     last_line = ""
     result_path: Path | None = None
