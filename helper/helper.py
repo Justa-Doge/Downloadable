@@ -11,8 +11,12 @@ import subprocess
 import sys
 import threading
 import uuid
-import tkinter as tk
-from tkinter import filedialog
+try:
+    import tkinter as tk
+    from tkinter import filedialog
+except ImportError:  # Windows Python installs may omit Tk.
+    tk = None
+    filedialog = None
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
@@ -53,10 +57,33 @@ def save_state(state: dict) -> None:
 def choose_folder(output_format: str) -> str:
     description = "MP3 audio" if output_format == "mp3" else "MP4 video"
     if os.name == "nt":
-        root = tk.Tk()
-        root.withdraw()
-        selected = filedialog.askdirectory(title=f"Choose where {description} should be saved")
-        root.destroy()
+        if tk is not None and filedialog is not None:
+            try:
+                root = tk.Tk()
+                root.withdraw()
+                root.attributes("-topmost", True)
+                selected = filedialog.askdirectory(title=f"Choose where {description} should be saved")
+                root.destroy()
+                if selected:
+                    return str(Path(selected).resolve())
+                raise ValueError("Folder selection canceled.")
+            except (RuntimeError, tk.TclError):
+                pass
+        # Fallback for Python builds without Tk or when Tk cannot open a window.
+        script = (
+            "Add-Type -AssemblyName System.Windows.Forms; "
+            "$d = New-Object System.Windows.Forms.FolderBrowserDialog; "
+            f"$d.Description = 'Choose where {description} should be saved'; "
+            "if ($d.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) "
+            "{ $d.SelectedPath }"
+        )
+        result = subprocess.run(
+            ["powershell.exe", "-NoProfile", "-STA", "-Command", script],
+            capture_output=True, text=True, check=False,
+        )
+        selected = result.stdout.strip()
+        if result.returncode != 0:
+            raise RuntimeError(result.stderr.strip() or "Could not open the Windows folder picker.")
         if not selected:
             raise ValueError("Folder selection canceled.")
         return str(Path(selected).resolve())
