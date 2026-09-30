@@ -12,6 +12,7 @@ import sys
 import threading
 import uuid
 import urllib.request
+import zipfile
 try:
     import tkinter as tk
     from tkinter import filedialog
@@ -59,6 +60,32 @@ def check_for_update() -> None:
         print(f"Update {latest} downloaded. Restart the helper to apply it.")
     except Exception as error:
         print(f"Update check skipped: {error}")
+
+
+def apply_staged_update() -> None:
+    update_path = ROOT / ".downloadable-update.zip"
+    if not update_path.exists():
+        return
+    try:
+        with zipfile.ZipFile(update_path) as archive:
+            for member in archive.infolist():
+                name = Path(member.filename)
+                if not name.parts or name.parts[0] in {".git", ".venv"} or name.name in {".helper-token", ".state.json", "config.js", ".downloadable-update.zip", ".update-available.json"}:
+                    continue
+                target = (ROOT / name).resolve()
+                if ROOT not in target.parents:
+                    continue
+                if member.is_dir():
+                    target.mkdir(parents=True, exist_ok=True)
+                    continue
+                target.parent.mkdir(parents=True, exist_ok=True)
+                with archive.open(member) as source, target.open("wb") as destination:
+                    shutil.copyfileobj(source, destination)
+        update_path.unlink()
+        (ROOT / ".update-available.json").unlink(missing_ok=True)
+        print("Staged Downloadable update applied.")
+    except Exception as error:
+        print(f"Could not apply staged update: {error}")
 
 
 def update_loop() -> None:
@@ -390,6 +417,7 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main() -> None:
+    apply_staged_update()
     if not TOKEN:
         print("Missing helper token. Run setup.command or setup.ps1 first.", file=sys.stderr)
         raise SystemExit(1)
