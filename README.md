@@ -26,6 +26,8 @@ YouTube and YouTube Music MP3 downloads include the source thumbnail as cover ar
 
 The MP3 and MP4 folders are remembered separately in both the local helper and Chrome's extension storage. Only one download runs at a time.
 
+The helper checks the Downloadable GitHub release once per hour. When a newer build is found, it downloads it locally and shows an update-ready message in the extension. Restart the helper to apply the staged update.
+
 ## Requirements
 
 - macOS or Windows 10/11

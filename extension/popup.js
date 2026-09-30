@@ -133,6 +133,9 @@ async function initialize() {
       }
     }
     if (state.active_job) trackJob(state.active_job);
+    if (state.update) {
+      setStatus(`Downloadable ${state.update.version} is ready. Restart the helper to apply it.`, "success");
+    }
   } catch (error) {
     setStatus(error.message || "Could not connect to the local helper.", "error");
   }

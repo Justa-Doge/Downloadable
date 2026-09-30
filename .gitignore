@@ -5,3 +5,5 @@ __pycache__/
 .DS_Store
 extension/config.js
 *.bak
+.downloadable-update.zip
+.update-available.json

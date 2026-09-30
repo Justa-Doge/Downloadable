@@ -11,6 +11,7 @@ import subprocess
 import sys
 import threading
 import uuid
+import urllib.request
 try:
     import tkinter as tk
     from tkinter import filedialog
@@ -24,6 +25,8 @@ from urllib.parse import urlparse
 
 HOST = "127.0.0.1"
 PORT = 47821
+UPDATE_INTERVAL = 3600
+RELEASE_API = "https://api.github.com/repos/Justa-Doge/Downloadable/releases/latest"
 ROOT = Path(__file__).resolve().parent.parent
 TOKEN_FILE = ROOT / ".helper-token"
 STATE_FILE = ROOT / ".state.json"
@@ -32,6 +35,36 @@ DEFAULT_VIDEO_DESTINATION = Path.home() / "Movies"
 TOKEN = TOKEN_FILE.read_text(encoding="utf-8").strip() if TOKEN_FILE.exists() else ""
 JOBS: dict[str, dict] = {}
 LOCK = threading.Lock()
+
+
+def version_tuple(value: str) -> tuple[int, ...]:
+    return tuple(int(part) for part in re.findall(r"\d+", value)[:3]) or (0,)
+
+
+def check_for_update() -> None:
+    try:
+        current = json.loads((ROOT / ".." / "extension" / "manifest.json").read_text(encoding="utf-8"))["version"]
+        request = urllib.request.Request(RELEASE_API, headers={"Accept": "application/vnd.github+json", "User-Agent": "Downloadable-Updater"})
+        with urllib.request.urlopen(request, timeout=20) as response:
+            release = json.loads(response.read().decode("utf-8"))
+        latest = str(release.get("tag_name", "")).lstrip("v")
+        if version_tuple(latest) <= version_tuple(current):
+            return
+        asset = next((item for item in release.get("assets", []) if str(item.get("name", "")).endswith(".zip")), None)
+        if not asset:
+            return
+        update_path = ROOT / ".downloadable-update.zip"
+        urllib.request.urlretrieve(asset["browser_download_url"], update_path)
+        (ROOT / ".update-available.json").write_text(json.dumps({"version": latest, "release_url": release.get("html_url", ""), "asset": asset["name"]}, indent=2), encoding="utf-8")
+        print(f"Update {latest} downloaded. Restart the helper to apply it.")
+    except Exception as error:
+        print(f"Update check skipped: {error}")
+
+
+def update_loop() -> None:
+    while True:
+        check_for_update()
+        threading.Event().wait(UPDATE_INTERVAL)
 
 
 def load_state() -> dict:
@@ -294,6 +327,7 @@ class Handler(BaseHTTPRequestHandler):
                     "mp3_destination": state.get("mp3_destination", ""),
                     "mp4_destination": state.get("mp4_destination", ""),
                     "active_job": active,
+                    "update": json.loads((ROOT / ".update-available.json").read_text(encoding="utf-8")) if (ROOT / ".update-available.json").exists() else None,
                 },
             )
             return
@@ -367,6 +401,7 @@ def main() -> None:
         print("ffmpeg is not installed or is not on PATH.", file=sys.stderr)
         raise SystemExit(1)
     print(f"Personal Video & Audio Downloader helper is running at http://{HOST}:{PORT}")
+    threading.Thread(target=update_loop, daemon=True).start()
     print("Keep this window open while downloading. Press Control-C to stop.")
     ThreadingHTTPServer((HOST, PORT), Handler).serve_forever()
 
