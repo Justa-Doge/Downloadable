@@ -3,16 +3,16 @@
 <plist version="1.0">
 <dict>
   <key>Label</key>
-  <string>com.downloadable.personal-media-downloader</string>
+  <string>com.downloadable.helper</string>
 
   <key>ProgramArguments</key>
   <array>
-    <string>/Users/downloadable/Library/Application Support/PersonalMediaDownloader/.venv/bin/python</string>
-    <string>/Users/downloadable/Library/Application Support/PersonalMediaDownloader/helper/helper.py</string>
+    <string>__HOME__/Library/Application Support/Downloadable/.venv/bin/python</string>
+    <string>__HOME__/Library/Application Support/Downloadable/helper/helper.py</string>
   </array>
 
   <key>WorkingDirectory</key>
-  <string>/Users/downloadable/Library/Application Support/PersonalMediaDownloader</string>
+  <string>__HOME__/Library/Application Support/Downloadable</string>
 
   <key>EnvironmentVariables</key>
   <dict>
@@ -30,8 +30,8 @@
   <integer>10</integer>
 
   <key>StandardOutPath</key>
-  <string>/Users/downloadable/Library/Logs/PersonalMediaDownloader.log</string>
+  <string>__HOME__/Library/Logs/Downloadable.log</string>
   <key>StandardErrorPath</key>
-  <string>/Users/downloadable/Library/Logs/PersonalMediaDownloader.error.log</string>
+  <string>__HOME__/Library/Logs/Downloadable.error.log</string>
 </dict>
 </plist>
