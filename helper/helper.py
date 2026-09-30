@@ -430,8 +430,7 @@ def main() -> None:
         print("yt-dlp is not installed. Run setup.command or setup.ps1 first.", file=sys.stderr)
         raise SystemExit(1)
     if not shutil.which("ffmpeg"):
-        print("ffmpeg is not installed or is not on PATH.", file=sys.stderr)
-        raise SystemExit(1)
+        print("Warning: ffmpeg is not installed or is not on PATH. Folder picking will work, but downloads need ffmpeg.", file=sys.stderr)
     print(f"Personal Video & Audio Downloader helper is running at http://{HOST}:{PORT}")
     threading.Thread(target=update_loop, daemon=True).start()
     print("Keep this window open while downloading. Press Control-C to stop.")
