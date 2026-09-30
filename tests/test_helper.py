@@ -74,6 +74,14 @@ class SharedHelperTests(unittest.TestCase):
         with mock.patch.object(helper.urllib.request, "urlopen", side_effect=OSError("offline")):
             self.assertEqual(helper.resolve_tiktok_short_url(short), short)
 
+    @unittest.skipUnless(helper.os.name == "nt", "Windows PATH test")
+    def test_windows_tool_path_points_at_winget_links(self):
+        import os
+        with mock.patch.dict(os.environ, {"LOCALAPPDATA": str(Path(tempfile.gettempdir())), "PATH": "base"}, clear=False):
+            with mock.patch.object(helper.Path, "is_dir", return_value=True):
+                helper.add_windows_tool_path()
+                self.assertIn("Microsoft\\WinGet\\Links", os.environ["PATH"])
+
     def test_old_release_does_not_stage_an_update(self):
         class Response:
             def __enter__(self):

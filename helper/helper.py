@@ -39,6 +39,14 @@ JOBS: dict[str, dict] = {}
 LOCK = threading.Lock()
 
 
+def add_windows_tool_path() -> None:
+    if os.name != "nt":
+        return
+    links = Path(os.environ.get("LOCALAPPDATA", "")) / "Microsoft" / "WinGet" / "Links"
+    if links.is_dir() and str(links) not in os.environ.get("PATH", "").split(os.pathsep):
+        os.environ["PATH"] = str(links) + os.pathsep + os.environ.get("PATH", "")
+
+
 def version_tuple(value: str) -> tuple[int, ...]:
     return tuple(int(part) for part in re.findall(r"\d+", value)[:3]) or (0,)
 
@@ -466,6 +474,7 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main() -> None:
+    add_windows_tool_path()
     apply_staged_update()
     if not TOKEN:
         print("Missing helper token. Run setup.command or setup.ps1 first.", file=sys.stderr)
