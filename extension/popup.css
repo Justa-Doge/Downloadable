@@ -1,0 +1,125 @@
+:root {
+  color-scheme: dark;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: #111318;
+  color: #f7f7f8;
+}
+
+body {
+  width: 340px;
+  margin: 0;
+}
+
+main { padding: 18px; }
+
+h1 {
+  margin: 0 0 8px;
+  font-size: 20px;
+}
+
+p { margin: 0; }
+
+.video-title {
+  min-height: 38px;
+  color: #b8bdc8;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.url-label {
+  display: block;
+  margin: 14px 0 6px;
+  color: #8d93a0;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.url-input {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 10px 11px;
+  border: 1px solid #343945;
+  border-radius: 9px;
+  outline: none;
+  background: #191c22;
+  color: #f7f7f8;
+  font: inherit;
+  font-size: 12px;
+}
+
+.url-input:focus {
+  border-color: #71a7ff;
+  box-shadow: 0 0 0 2px rgba(113, 167, 255, .16);
+}
+
+.destination {
+  margin: 14px 0 16px;
+  padding: 12px;
+  border: 1px solid #2d313b;
+  border-radius: 10px;
+  background: #191c22;
+}
+
+.folder-setting > span {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: #8d93a0;
+}
+
+.folder-setting + .folder-setting {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #2d313b;
+}
+
+.folder-button {
+  float: right;
+  border: 0;
+  background: transparent;
+  color: #71a7ff;
+  cursor: pointer;
+}
+
+.folder-setting p {
+  clear: both;
+  padding-top: 9px;
+  overflow: hidden;
+  color: #e4e7ed;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.format-buttons {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.download-button {
+  padding: 13px;
+  border: 0;
+  border-radius: 10px;
+  color: white;
+  cursor: pointer;
+  text-align: left;
+}
+
+.download-button strong,
+.download-button span { display: block; }
+.download-button strong { font-size: 18px; }
+.download-button span { margin-top: 3px; opacity: .78; font-size: 11px; }
+.download-button:disabled, .folder-button:disabled { opacity: .45; cursor: not-allowed; }
+.mp3 { background: linear-gradient(135deg, #7c3aed, #a855f7); }
+.mp4 { background: linear-gradient(135deg, #dc2626, #f43f5e); }
+
+.progress-wrap { margin-top: 15px; }
+.progress-track { height: 7px; overflow: hidden; border-radius: 10px; background: #292d35; }
+#progress-bar { width: 0; height: 100%; background: #4ade80; transition: width .25s ease; }
+#progress-text { margin-top: 7px; color: #b8bdc8; font-size: 12px; }
+.status { min-height: 18px; margin-top: 12px; font-size: 12px; color: #fbbf24; }
+.status.success { color: #4ade80; }
+.status.error { color: #fb7185; }
+.legal { margin-top: 14px; color: #6f7582; font-size: 10px; line-height: 1.35; }

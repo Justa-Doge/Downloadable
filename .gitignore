@@ -1,0 +1,6 @@
+.helper-token
+.state.json
+.venv/
+__pycache__/
+.DS_Store
+extension/config.js
