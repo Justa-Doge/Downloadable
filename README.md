@@ -33,7 +33,7 @@ The helper checks the Downloadable GitHub release once per hour. When a newer bu
 - macOS or Windows 10/11
 - Google Chrome or another Chromium browser
 - Internet access during initial setup
-- `ffmpeg` available on the command line (already present on the Mac this was built for)
+- `ffmpeg` available on the command line (already present on the Mac this was built for); setup installs the Python-side TikTok impersonation dependency automatically
 
 ## Build a release ZIP
 

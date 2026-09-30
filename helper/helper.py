@@ -202,14 +202,38 @@ def valid_media_url(value: str) -> bool:
         or "/photo/" in parsed.path
         or "/music/" in parsed.path
         or (host in {"vm.tiktok.com", "vt.tiktok.com"} and len(parsed.path) > 1)
+        or (host in {"tiktok.com", "www.tiktok.com"} and parsed.path.startswith(("/t/", "/v/")) and len(parsed.path) > 3)
     )
     return parsed.scheme == "https" and (youtube_media or youtube_short_link or tiktok_media)
+
+
+def resolve_tiktok_short_url(value: str) -> str:
+    """Follow TikTok share redirects so yt-dlp receives the canonical video URL."""
+    try:
+        parsed = urlparse(value)
+        host = (parsed.hostname or "").lower()
+        is_short = host in {"vm.tiktok.com", "vt.tiktok.com"} or (
+            host in {"tiktok.com", "www.tiktok.com"} and parsed.path.startswith(("/t/", "/v/"))
+        )
+        if not is_short:
+            return value
+        request = urllib.request.Request(value, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(request, timeout=15) as response:
+            resolved = response.geturl()
+        return resolved if valid_media_url(resolved) else value
+    except Exception:
+        return value
 
 
 def is_tiktok_sound_url(value: str) -> bool:
     parsed = urlparse(value)
     host = (parsed.hostname or "").lower()
     return (host == "tiktok.com" or host.endswith(".tiktok.com")) and "/music/" in parsed.path
+
+
+def is_tiktok_url(value: str) -> bool:
+    host = (urlparse(value).hostname or "").lower()
+    return host == "tiktok.com" or host.endswith(".tiktok.com")
 
 
 def is_youtube_url(value: str) -> bool:
@@ -254,6 +278,8 @@ def run_download(job_id: str, url: str, output_format: str, destination: Path) -
             "-S", "ext:mp4:m4a",
             "--merge-output-format", "mp4",
         ]
+    if is_tiktok_url(url):
+        command += ["--impersonate", "chrome"]
     if is_tiktok_sound_url(url):
         command += ["--playlist-end", "1"]
     command.append(url)
@@ -408,7 +434,8 @@ class Handler(BaseHTTPRequestHandler):
                 url = str(body.get("url", ""))
                 output_format = str(body.get("format", ""))
                 destination = Path(str(body.get("destination", ""))).expanduser().resolve()
-                if not valid_media_url(url):
+                download_url = resolve_tiktok_short_url(url)
+                if not valid_media_url(download_url):
                     raise ValueError("That is not a supported YouTube or TikTok video URL.")
                 if output_format not in {"mp3", "mp4"}:
                     raise ValueError("Format must be MP3 or MP4.")
@@ -426,7 +453,7 @@ class Handler(BaseHTTPRequestHandler):
                 save_state(state)
                 threading.Thread(
                     target=download_worker,
-                    args=(job_id, url, output_format, destination),
+                    args=(job_id, download_url, output_format, destination),
                     daemon=True,
                 ).start()
                 self.send_json(202, {"job_id": job_id})

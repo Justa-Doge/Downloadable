@@ -14,7 +14,7 @@ if ! command -v ffmpeg >/dev/null 2>&1; then
 fi
 
 /usr/bin/python3 -m venv .venv
-.venv/bin/python -m pip install --upgrade pip yt-dlp mutagen
+.venv/bin/python -m pip install --upgrade pip yt-dlp mutagen curl-cffi
 
 if [[ -s .helper-token ]]; then
   IFS= read -r TOKEN < .helper-token

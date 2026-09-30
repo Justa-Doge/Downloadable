@@ -64,7 +64,15 @@ class SharedHelperTests(unittest.TestCase):
         self.assertTrue(helper.valid_media_url("https://www.youtube.com/watch?v=abc"))
         self.assertTrue(helper.valid_media_url("https://youtu.be/abc"))
         self.assertTrue(helper.valid_media_url("https://www.tiktok.com/@user/video/123"))
+        self.assertTrue(helper.valid_media_url("https://www.tiktok.com/t/ZTRC5xgJp"))
+        self.assertTrue(helper.valid_media_url("https://www.tiktok.com/v/123"))
+        self.assertTrue(helper.valid_media_url("https://vm.tiktok.com/ZMabc123/"))
         self.assertFalse(helper.valid_media_url("https://example.com/video/123"))
+
+    def test_tiktok_short_url_resolution_keeps_original_on_failure(self):
+        short = "https://www.tiktok.com/t/example"
+        with mock.patch.object(helper.urllib.request, "urlopen", side_effect=OSError("offline")):
+            self.assertEqual(helper.resolve_tiktok_short_url(short), short)
 
     def test_old_release_does_not_stage_an_update(self):
         class Response:

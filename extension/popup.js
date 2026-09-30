@@ -70,7 +70,9 @@ function mediaType(url) {
     const tiktokMedia = tiktokSite &&
       (parsed.pathname.includes("/video/") ||
         parsed.pathname.includes("/photo/") ||
-        ["vm.tiktok.com", "vt.tiktok.com"].includes(hostname));
+        ["vm.tiktok.com", "vt.tiktok.com"].includes(hostname) ||
+        ((hostname === "tiktok.com" || hostname === "www.tiktok.com") &&
+          (parsed.pathname.startsWith("/t/") || parsed.pathname.startsWith("/v/"))));
     const tiktokSound = tiktokSite && parsed.pathname.includes("/music/");
     if (tiktokSound) return "sound";
     if (youtubeVideo || youtubeShortLink || tiktokMedia) return "video";

@@ -37,7 +37,7 @@ if ($launcher) {
   & $launcher.Source -m venv .venv
 }
 if ($LASTEXITCODE -ne 0 -or -not (Test-Path ".venv\Scripts\python.exe")) { throw "Python could not create the local environment." }
-& ".venv\Scripts\python.exe" -m pip install --upgrade pip yt-dlp mutagen
+& ".venv\Scripts\python.exe" -m pip install --upgrade pip yt-dlp mutagen curl-cffi
 if ($LASTEXITCODE -ne 0) { throw "Python packages could not be installed." }
 
 if (-not (Test-Path .helper-token)) {
