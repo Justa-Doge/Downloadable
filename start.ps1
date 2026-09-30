@@ -15,5 +15,5 @@ try {
   Write-Host ""
   Write-Host "Downloadable could not start:" -ForegroundColor Red
   Write-Host $_.Exception.Message -ForegroundColor Yellow
+  exit 1
 }
-Read-Host "Press Enter to close"

@@ -11,3 +11,8 @@ if errorlevel 1 (
 )
 
 powershell.exe -NoProfile -ExecutionPolicy RemoteSigned -File "%DOWNLOADABLE_ROOT%start.ps1"
+if errorlevel 1 (
+  echo.
+  echo Downloadable helper stopped with an error.
+  pause
+)

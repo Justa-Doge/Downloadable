@@ -21,7 +21,7 @@ YouTube and YouTube Music MP3 downloads include the source thumbnail as cover ar
 
 1. Install Python 3.11+ and FFmpeg (`winget install Python.Python.3.11` and `winget install Gyan.FFmpeg`).
 2. Double-click `setup.cmd`. It removes the downloaded-file marker only from this project's local PowerShell scripts, then runs them under a process-only `RemoteSigned` policy to create the Python environment and configuration. It does not change Windows' saved execution policy.
-3. Run `start.cmd` and leave that window open while downloading.
+3. Setup registers and starts the helper as a hidden per-user Windows task, so no PowerShell window needs to stay open. Use `start.cmd` only for visible troubleshooting output.
 4. In Chrome, open `chrome://extensions`, enable **Developer mode**, and choose **Load unpacked**. Select this project's `extension` folder.
 
 The MP3 and MP4 folders are remembered separately in both the local helper and Chrome's extension storage. Only one download runs at a time.
