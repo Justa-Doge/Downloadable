@@ -57,36 +57,34 @@ def save_state(state: dict) -> None:
 def choose_folder(output_format: str) -> str:
     description = "MP3 audio" if output_format == "mp3" else "MP4 video"
     if os.name == "nt":
-        if tk is not None and filedialog is not None:
-            try:
-                root = tk.Tk()
-                root.withdraw()
-                root.attributes("-topmost", True)
-                selected = filedialog.askdirectory(title=f"Choose where {description} should be saved")
-                root.destroy()
-                if selected:
-                    return str(Path(selected).resolve())
-                raise ValueError("Folder selection canceled.")
-            except (RuntimeError, tk.TclError):
-                pass
-        # Fallback for Python builds without Tk or when Tk cannot open a window.
-        script = (
-            "Add-Type -AssemblyName System.Windows.Forms; "
-            "$d = New-Object System.Windows.Forms.FolderBrowserDialog; "
-            f"$d.Description = 'Choose where {description} should be saved'; "
-            "if ($d.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) "
-            "{ $d.SelectedPath }"
+        import ctypes
+        from ctypes import wintypes
+
+        class BROWSEINFO(ctypes.Structure):
+            _fields_ = [
+                ("hwndOwner", wintypes.HWND), ("pidlRoot", ctypes.c_void_p),
+                ("pszDisplayName", wintypes.LPWSTR), ("lpszTitle", wintypes.LPCWSTR),
+                ("ulFlags", wintypes.UINT), ("lpfn", ctypes.c_void_p),
+                ("lParam", wintypes.LPARAM), ("iImage", ctypes.c_int),
+            ]
+
+        display_name = ctypes.create_unicode_buffer(260)
+        info = BROWSEINFO(
+            None, None, display_name, f"Choose where {description} should be saved",
+            0x0001 | 0x0040, None, 0, 0,
         )
-        result = subprocess.run(
-            ["powershell.exe", "-NoProfile", "-STA", "-Command", script],
-            capture_output=True, text=True, check=False,
-        )
-        selected = result.stdout.strip()
-        if result.returncode != 0:
-            raise RuntimeError(result.stderr.strip() or "Could not open the Windows folder picker.")
-        if not selected:
+        shell32 = ctypes.windll.shell32
+        shell32.SHBrowseForFolderW.restype = ctypes.c_void_p
+        pidl = shell32.SHBrowseForFolderW(ctypes.byref(info))
+        if not pidl:
             raise ValueError("Folder selection canceled.")
-        return str(Path(selected).resolve())
+        try:
+            path_buffer = ctypes.create_unicode_buffer(32768)
+            if not shell32.SHGetPathFromIDListW(pidl, path_buffer):
+                raise RuntimeError("Windows returned no folder path.")
+            return str(Path(path_buffer.value).resolve())
+        finally:
+            ctypes.windll.ole32.CoTaskMemFree(pidl)
     script = f"""
         tell application "Finder"
             activate
