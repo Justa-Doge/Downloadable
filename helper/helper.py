@@ -134,17 +134,21 @@ def choose_folder(output_format: str) -> str:
             0x0001 | 0x0040, None, 0, 0,
         )
         shell32 = ctypes.windll.shell32
+        ole32 = ctypes.windll.ole32
+        ole32.CoInitialize(None)
         shell32.SHBrowseForFolderW.restype = ctypes.c_void_p
-        pidl = shell32.SHBrowseForFolderW(ctypes.byref(info))
-        if not pidl:
-            raise ValueError("Folder selection canceled.")
         try:
+            pidl = shell32.SHBrowseForFolderW(ctypes.byref(info))
+            if not pidl:
+                raise ValueError("Folder selection canceled.")
             path_buffer = ctypes.create_unicode_buffer(32768)
             if not shell32.SHGetPathFromIDListW(pidl, path_buffer):
                 raise RuntimeError("Windows returned no folder path.")
             return str(Path(path_buffer.value).resolve())
         finally:
-            ctypes.windll.ole32.CoTaskMemFree(pidl)
+            if 'pidl' in locals() and pidl:
+                ole32.CoTaskMemFree(pidl)
+            ole32.CoUninitialize()
     script = f"""
         tell application "Finder"
             activate
