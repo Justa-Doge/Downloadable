@@ -87,11 +87,11 @@ function useUrl(value, announce = true) {
   const type = mediaType(candidate);
   currentUrl = type ? candidate : "";
   downloadButtons.forEach((button) => {
-    button.disabled = !currentUrl || (type === "sound" && button.dataset.format === "mp4");
+    button.disabled = !currentUrl || type === "sound";
   });
   if (!announce) return;
   if (type === "sound") {
-    setStatus("TikTok sound link ready — choose MP3.", "success");
+    setStatus("Open a TikTok video using this sound, then choose MP3.", "error");
   } else if (type === "video") {
     setStatus("Link ready.", "success");
   } else {
@@ -170,8 +170,8 @@ downloadButtons.forEach((button) => {
       setStatus("Paste a supported link first.", "error");
       return;
     }
-    if (mediaType(currentUrl) === "sound" && format === "mp4") {
-      setStatus("TikTok sound links are audio-only; choose MP3.", "error");
+    if (mediaType(currentUrl) === "sound") {
+      setStatus("Sound pages cannot be downloaded directly. Open a video using this sound, then choose MP3.", "error");
       return;
     }
     if (!destinations[format]) {
