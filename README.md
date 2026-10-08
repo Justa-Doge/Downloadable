@@ -19,12 +19,13 @@ YouTube and YouTube Music MP3 downloads include the source thumbnail as cover ar
 
 ## Install on Windows
 
-1. Install Python 3.11+ and FFmpeg (`winget install Python.Python.3.11` and `winget install Gyan.FFmpeg`).
-2. Double-click `setup.cmd`. It removes the downloaded-file marker only from this project's local PowerShell scripts, then runs them under a process-only `RemoteSigned` policy to create the Python environment and configuration. It does not change Windows' saved execution policy.
-3. Setup registers and starts the helper directly through hidden `pythonw.exe` as a per-user Windows task, so no PowerShell or command prompt needs to stay open. Use `start.cmd` only for visible troubleshooting output.
-4. In Chrome, open `chrome://extensions`, enable **Developer mode**, and choose **Load unpacked**. Select this project's `extension` folder.
+1. Double-click `setup.cmd`. It installs missing Python 3.11 and FFmpeg through winget, creates the local environment, and starts the helper in the background. It does not change Windows' saved execution policy.
+2. Chrome's extensions page opens automatically. Turn on **Developer mode**, choose **Load unpacked**, and select this project's `extension` folder.
+3. No PowerShell or command prompt needs to stay open. Use `start.cmd` only for visible troubleshooting output.
 
 The MP3 and MP4 folders are remembered separately in both the local helper and Chrome's extension storage. Only one download runs at a time.
+
+Open the gear button in the extension popup for local helper status, a manual reconnect check, clearing both saved destination folders, and a shortcut back to Chrome's extension details page. Reconnect only checks the existing local helper; it does not reauthorize an account or send data anywhere.
 
 The helper checks the Downloadable GitHub release once per hour. When a newer build is found, it downloads it locally and shows an update-ready message in the extension. Restart the helper to apply the staged update.
 
@@ -41,7 +42,7 @@ Run `python3 tools/build_release.py` from the project folder. The builder exclud
 
 ## Troubleshooting
 
-- **Local helper is not running:** on macOS, double-click `start.command`; on Windows, run `start.ps1`. Keep the terminal window open.
+- **Local helper is not running:** on macOS, double-click `start.command`; on Windows, run `setup.cmd` again to repair the background task, or use the popup's **Settings → Reconnect** button to see the exact connection error. Use `start.cmd` only for visible troubleshooting output.
 - **Authentication failed:** run `setup.command` again, then click Reload on the extension's card at `chrome://extensions`.
 - **Video requires sign-in:** this first version intentionally does not read browser cookies. Use YouTube's official download feature for restricted videos.
 - **YouTube or TikTok changed something:** run `setup.command` again to update `yt-dlp`, then reload the extension.

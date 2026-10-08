@@ -12,10 +12,41 @@ body {
 
 main { padding: 18px; }
 
+.title-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+
 h1 {
   margin: 0 0 8px;
   font-size: 20px;
 }
+
+.settings-button {
+  width: 30px;
+  height: 30px;
+  border: 1px solid #343945;
+  border-radius: 8px;
+  background: #191c22;
+  color: #b8bdc8;
+  cursor: pointer;
+  font-size: 16px;
+}
+.settings-button:hover, .settings-button[aria-expanded="true"] { border-color: #71a7ff; color: #f7f7f8; }
+
+.settings-panel {
+  margin: 0 0 14px;
+  padding: 12px;
+  border: 1px solid #2d313b;
+  border-radius: 10px;
+  background: #191c22;
+}
+.settings-heading { margin-bottom: 10px; color: #f7f7f8; font-size: 13px; font-weight: 700; }
+.helper-status-row { display: flex; justify-content: space-between; gap: 10px; color: #b8bdc8; font-size: 12px; }
+.helper-status-row strong { color: #fbbf24; font-weight: 600; }
+.helper-status-row strong.connected { color: #4ade80; }
+.helper-status-row strong.failed { color: #fb7185; }
+.settings-actions { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 11px; }
+.settings-actions button { padding: 7px 9px; border: 1px solid #343945; border-radius: 7px; background: #222630; color: #e4e7ed; cursor: pointer; font: inherit; font-size: 11px; }
+.settings-actions button:hover { border-color: #71a7ff; }
+.settings-note { margin-top: 10px; color: #6f7582; font-size: 10px; line-height: 1.35; }
 
 p { margin: 0; }
 

@@ -8,8 +8,25 @@
   </head>
   <body>
     <main>
-      <h1>Downloadable</h1>
+      <div class="title-row">
+        <h1>Downloadable</h1>
+        <button id="settings-button" class="settings-button" type="button" aria-expanded="false" aria-controls="settings-panel" title="Settings">⚙</button>
+      </div>
       <p id="video-title" class="video-title">Reading current tab…</p>
+
+      <section id="settings-panel" class="settings-panel" hidden>
+        <div class="settings-heading">Settings</div>
+        <div class="helper-status-row">
+          <span>Local helper</span>
+          <strong id="helper-status">Checking…</strong>
+        </div>
+        <div class="settings-actions">
+          <button id="reconnect-button" type="button">Reconnect</button>
+          <button id="reset-folders-button" type="button">Reset folders</button>
+          <button id="extensions-button" type="button">Extension details</button>
+        </div>
+        <p class="settings-note">The helper stays on this computer and only accepts this extension's local token.</p>
+      </section>
 
       <label class="url-label" for="media-url">YouTube or TikTok link</label>
       <input id="media-url" class="url-input" type="url" inputmode="url"

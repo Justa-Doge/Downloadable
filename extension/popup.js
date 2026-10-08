@@ -13,10 +13,17 @@ const progressWrap = document.querySelector("#progress-wrap");
 const progressBar = document.querySelector("#progress-bar");
 const progressText = document.querySelector("#progress-text");
 const statusElement = document.querySelector("#status");
+const settingsButton = document.querySelector("#settings-button");
+const settingsPanel = document.querySelector("#settings-panel");
+const helperStatus = document.querySelector("#helper-status");
+const reconnectButton = document.querySelector("#reconnect-button");
+const resetFoldersButton = document.querySelector("#reset-folders-button");
+const extensionsButton = document.querySelector("#extensions-button");
 
 let currentUrl = "";
 const destinations = { mp3: "", mp4: "" };
 let pollTimer = null;
+let helperConnected = false;
 
 function showDestination(format, destination) {
   destinations[format] = destination || "";
@@ -33,6 +40,13 @@ function setStatus(message, kind = "") {
   statusElement.className = `status ${kind}`;
 }
 
+function setHelperStatus(connected, message = "") {
+  helperConnected = connected;
+  helperStatus.textContent = message || (connected ? "Connected" : "Not connected");
+  helperStatus.className = connected ? "connected" : "failed";
+  reconnectButton.disabled = false;
+}
+
 function setBusy(busy) {
   folderButtons.forEach((button) => { button.disabled = busy; });
   const type = mediaType(currentUrl);
@@ -42,17 +56,45 @@ function setBusy(busy) {
 }
 
 async function helperRequest(path, options = {}) {
-  const response = await fetch(`${HELPER_URL}${path}`, {
-    ...options,
-    headers: {
-      "Content-Type": "application/json",
-      "X-Helper-Token": token,
-      ...(options.headers || {})
-    }
-  });
+  if (!token) throw new Error("Helper is not configured. Run setup.cmd, then reload the extension.");
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 5000);
+  let response;
+  try {
+    response = await fetch(`${HELPER_URL}${path}`, {
+      ...options,
+      signal: controller.signal,
+      cache: "no-store",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Helper-Token": token,
+        ...(options.headers || {})
+      }
+    });
+  } catch (error) {
+    if (error.name === "AbortError") throw new Error("The local helper did not respond. Open Settings and choose Reconnect.");
+    throw new Error("Could not reach the local helper. Make sure setup.cmd completed.");
+  } finally {
+    clearTimeout(timeout);
+  }
   const body = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(body.error || `Helper error (${response.status})`);
   return body;
+}
+
+async function connectHelper(showMessage = true) {
+  helperStatus.textContent = "Checking…";
+  helperStatus.className = "";
+  try {
+    const state = await helperRequest("/state");
+    setHelperStatus(true);
+    if (showMessage) setStatus("Local helper connected.", "success");
+    return state;
+  } catch (error) {
+    setHelperStatus(false, error.message);
+    if (showMessage) setStatus(error.message, "error");
+    throw error;
+  }
 }
 
 function mediaType(url) {
@@ -126,7 +168,7 @@ async function initialize() {
   }
 
   try {
-    const state = await helperRequest("/state");
+    const state = await connectHelper(false);
     for (const format of ["mp3", "mp4"]) {
       const savedDestination = state[`${format}_destination`] || destinations[format];
       if (savedDestination) {
@@ -142,6 +184,44 @@ async function initialize() {
     setStatus(error.message || "Could not connect to the local helper.", "error");
   }
 }
+
+settingsButton.addEventListener("click", () => {
+  const open = settingsPanel.hidden;
+  settingsPanel.hidden = !open;
+  settingsButton.setAttribute("aria-expanded", String(open));
+});
+
+reconnectButton.addEventListener("click", async () => {
+  reconnectButton.disabled = true;
+  try {
+    const state = await connectHelper(true);
+    if (state.active_job) trackJob(state.active_job);
+  } catch (_) {
+    // connectHelper already explains the failure in the popup.
+  } finally {
+    reconnectButton.disabled = false;
+  }
+});
+
+resetFoldersButton.addEventListener("click", async () => {
+  resetFoldersButton.disabled = true;
+  try {
+    await helperRequest("/reset-settings", { method: "POST", body: "{}" });
+    for (const format of ["mp3", "mp4"]) {
+      showDestination(format, "");
+      await rememberDestination(format, "");
+    }
+    setStatus("Saved folders cleared.", "success");
+  } catch (error) {
+    setStatus(error.message, "error");
+  } finally {
+    resetFoldersButton.disabled = false;
+  }
+});
+
+extensionsButton.addEventListener("click", () => {
+  chrome.tabs.create({ url: "chrome://extensions" });
+});
 
 urlInput.addEventListener("input", () => useUrl(urlInput.value));
 

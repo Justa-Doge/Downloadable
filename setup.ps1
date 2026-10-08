@@ -2,6 +2,17 @@ $ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot
 
 Write-Host "Setting up Downloadable..."
+
+function Install-WingetPackage([string]$Id, [string]$Name) {
+  $winget = Get-Command winget -ErrorAction SilentlyContinue
+  if (-not $winget) {
+    throw "$Name is missing, and winget is not available. Install $Name, then run setup.cmd again."
+  }
+  Write-Host "Installing $Name..."
+  & $winget.Source install --id $Id --exact --accept-source-agreements --accept-package-agreements
+  if ($LASTEXITCODE -ne 0) { throw "$Name could not be installed." }
+}
+
 function Add-DownloadableToolPath {
   $links = Join-Path $env:LOCALAPPDATA "Microsoft\WinGet\Links"
   if (Test-Path -LiteralPath $links) {
@@ -21,19 +32,39 @@ function Add-DownloadableToolPath {
 
 Add-DownloadableToolPath
 if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue)) {
-  throw "ffmpeg is required. Install it with winget install Gyan.FFmpeg, then run setup.cmd again."
+  Install-WingetPackage "Gyan.FFmpeg" "FFmpeg"
+  Add-DownloadableToolPath
+  if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue)) { throw "FFmpeg was installed but could not be found yet. Restart setup.cmd once." }
 }
 
 $launcher = Get-Command py -ErrorAction SilentlyContinue
 if ($launcher) {
   & $launcher.Source -3 -c "import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)"
-  if ($LASTEXITCODE -ne 0) { throw "Python 3.11 or newer is required." }
+  if ($LASTEXITCODE -ne 0) {
+    Install-WingetPackage "Python.Python.3.11" "Python 3.11"
+    $launcher = Get-Command py -ErrorAction SilentlyContinue
+    if (-not $launcher) { throw "Python was installed but could not be found yet. Restart setup.cmd once." }
+    & $launcher.Source -3 -c "import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)"
+    if ($LASTEXITCODE -ne 0) { throw "Python 3.11 or newer is required." }
+  }
   & $launcher.Source -3 -m venv .venv
 } else {
   $launcher = Get-Command python -ErrorAction SilentlyContinue
-  if (-not $launcher) { throw "Python 3.11 or newer is required. Install it with winget install Python.Python.3.11." }
+  if (-not $launcher) {
+    Install-WingetPackage "Python.Python.3.11" "Python 3.11"
+    $launcher = Get-Command py -ErrorAction SilentlyContinue
+    if (-not $launcher) { $launcher = Get-Command python -ErrorAction SilentlyContinue }
+    if (-not $launcher) { throw "Python was installed but could not be found yet. Restart setup.cmd once." }
+  }
   & $launcher.Source -c "import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)"
-  if ($LASTEXITCODE -ne 0) { throw "Python 3.11 or newer is required." }
+  if ($LASTEXITCODE -ne 0) {
+    Install-WingetPackage "Python.Python.3.11" "Python 3.11"
+    $launcher = Get-Command py -ErrorAction SilentlyContinue
+    if (-not $launcher) { $launcher = Get-Command python -ErrorAction SilentlyContinue }
+    if (-not $launcher) { throw "Python was installed but could not be found yet. Restart setup.cmd once." }
+    & $launcher.Source -3 -c "import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)"
+    if ($LASTEXITCODE -ne 0) { throw "Python 3.11 or newer is required." }
+  }
   & $launcher.Source -m venv .venv
 }
 if ($LASTEXITCODE -ne 0 -or -not (Test-Path ".venv\Scripts\python.exe")) { throw "Python could not create the local environment." }
@@ -61,3 +92,10 @@ Write-Host "Setup complete. Open chrome://extensions, enable Developer mode, and
 Write-Host "$PSScriptRoot\extension"
 Write-Host "The helper is now running in the background and will start when you sign in."
 Write-Host "Use start.cmd only when you want to see diagnostic output."
+
+try {
+  Start-Process "chrome.exe" -ArgumentList "chrome://extensions" -ErrorAction Stop
+  Write-Host "Chrome's extensions page is open. Turn on Developer mode, then choose Load unpacked."
+} catch {
+  Write-Host "Open chrome://extensions manually to finish loading the extension."
+}

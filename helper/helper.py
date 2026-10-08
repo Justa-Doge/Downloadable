@@ -262,6 +262,9 @@ def run_download(job_id: str, url: str, output_format: str, destination: Path) -
         "--newline",
         "--no-playlist",
         "--no-overwrites",
+        "--socket-timeout", "30",
+        "--retries", "3",
+        "--fragment-retries", "3",
         "--restrict-filenames",
         "--progress-template",
         "download:%(progress._percent_str)s|%(progress._speed_str)s|%(progress._eta_str)s",
@@ -474,6 +477,10 @@ class Handler(BaseHTTPRequestHandler):
                     daemon=True,
                 ).start()
                 self.send_json(202, {"job_id": job_id})
+                return
+            if self.path == "/reset-settings":
+                save_state({})
+                self.send_json(200, {"reset": True})
                 return
             self.send_json(404, {"error": "Not found."})
         except (ValueError, json.JSONDecodeError) as error:
