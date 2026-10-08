@@ -1,4 +1,4 @@
-const HELPER_URL = "http://127.0.0.1:47821";
+const HELPER_URL = globalThis.HELPER_URL || "http://127.0.0.1:47821";
 const token = globalThis.HELPER_TOKEN;
 
 const titleElement = document.querySelector("#video-title");

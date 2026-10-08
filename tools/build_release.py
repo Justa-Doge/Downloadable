@@ -20,6 +20,8 @@ FIXED_FILES = [
     "start.ps1",
     "setup.cmd",
     "start.cmd",
+    "setup.sh",
+    "start.sh",
     "helper/helper.py",
 ]
 
@@ -40,7 +42,7 @@ def build(output: Path) -> None:
             relative = path.relative_to(ROOT).as_posix()
             info = zipfile.ZipInfo.from_file(path, relative)
             info.create_system = 3
-            executable = path.suffix == ".command" or relative == "helper/helper.py"
+            executable = path.suffix in {".command", ".sh"} or relative == "helper/helper.py"
             mode = stat.S_IFREG | (0o755 if executable else 0o644)
             info.external_attr = mode << 16
             info.compress_type = zipfile.ZIP_DEFLATED

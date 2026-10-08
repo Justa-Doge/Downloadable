@@ -29,9 +29,23 @@ Open the gear button in the extension popup for local helper status, a manual re
 
 The helper checks the Downloadable GitHub release once per hour. When a newer build is found, it downloads it locally and shows an update-ready message in the extension. Restart the helper to apply the staged update.
 
+## Install on Linux
+
+1. Install Python 3, FFmpeg, and a Chromium-based browser using your distribution's package manager.
+2. Run `./setup.sh` from this folder. It creates the local environment, token, extension configuration, and user service when systemd user services are available.
+3. In Chrome, open `chrome://extensions`, enable **Developer mode**, and choose **Load unpacked** for this project's `extension` folder.
+4. If your desktop does not provide a user service manager, `setup.sh` starts the helper for the current session; use `./start.sh` after reboot.
+
+## Install on ChromeOS
+
+1. Enable the Linux development environment and share the ChromeOS **Downloads** folder with it.
+2. Place this project in the Linux container and run `./setup.sh` in the Terminal.
+3. Load the `extension` folder in Chrome using **Developer mode → Load unpacked**.
+4. The extension uses `penguin.linux.test` to reach the helper in the Linux container. MP3 and MP4 defaults point to the shared ChromeOS Downloads folder when it is available.
+
 ## Requirements
 
-- macOS or Windows 10/11
+- Windows 10/11, macOS, Linux, or ChromeOS with the Linux development environment
 - Google Chrome or another Chromium browser
 - Internet access during initial setup
 - `ffmpeg` available on the command line (already present on the Mac this was built for); setup installs the Python-side TikTok impersonation dependency automatically

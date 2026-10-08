@@ -25,15 +25,17 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 
-HOST = "127.0.0.1"
+HOST = os.environ.get("DOWNLOADABLE_HOST", "127.0.0.1")
 PORT = 47821
 UPDATE_INTERVAL = 3600
 RELEASE_API = "https://api.github.com/repos/Justa-Doge/Downloadable/releases/latest"
 ROOT = Path(__file__).resolve().parent.parent
 TOKEN_FILE = ROOT / ".helper-token"
 STATE_FILE = ROOT / ".state.json"
-DEFAULT_DESTINATION = Path.home() / "Downloads" / "MUSIC!!!!!"
-DEFAULT_VIDEO_DESTINATION = Path.home() / "Movies"
+CHROMEOS_DOWNLOADS = Path("/mnt/chromeos/MyFiles/Downloads")
+DOWNLOAD_ROOT = CHROMEOS_DOWNLOADS if CHROMEOS_DOWNLOADS.is_dir() else Path.home() / "Downloads"
+DEFAULT_DESTINATION = DOWNLOAD_ROOT / "MUSIC!!!!!"
+DEFAULT_VIDEO_DESTINATION = (CHROMEOS_DOWNLOADS if CHROMEOS_DOWNLOADS.is_dir() else Path.home() / "Movies")
 TOKEN = TOKEN_FILE.read_text(encoding="utf-8").strip() if TOKEN_FILE.exists() else ""
 JOBS: dict[str, dict] = {}
 LOCK = threading.Lock()
@@ -175,6 +177,20 @@ def choose_folder(output_format: str) -> str:
                 ole32.CoTaskMemFree(pidl)
             if com_initialized:
                 ole32.CoUninitialize()
+    if sys.platform.startswith("linux"):
+        if tk is not None and filedialog is not None and os.environ.get("DISPLAY"):
+            root = tk.Tk()
+            root.withdraw()
+            root.attributes("-topmost", True)
+            selected = filedialog.askdirectory(title=f"Choose where {description} should be saved")
+            root.destroy()
+            if not selected:
+                raise ValueError("Folder selection canceled.")
+            return str(Path(selected).resolve())
+        fallback = DEFAULT_DESTINATION if output_format == "mp3" else DEFAULT_VIDEO_DESTINATION
+        fallback.mkdir(parents=True, exist_ok=True)
+        return str(fallback.resolve())
+
     script = f"""
         tell application "Finder"
             activate
