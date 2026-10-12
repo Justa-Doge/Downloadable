@@ -10,6 +10,8 @@ import shutil
 import subprocess
 import sys
 import threading
+import tempfile
+import traceback
 import uuid
 import urllib.error
 import urllib.request
@@ -23,6 +25,7 @@ except ImportError:  # Windows Python installs may omit Tk.
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
+import urllib.parse
 
 
 HOST = os.environ.get("DOWNLOADABLE_HOST", "127.0.0.1")
@@ -30,6 +33,9 @@ PORT = 47821
 UPDATE_INTERVAL = 3600
 RELEASE_API = "https://api.github.com/repos/Justa-Doge/Downloadable/releases/latest"
 ROOT = Path(__file__).resolve().parent.parent
+LOG_DIR = Path(tempfile.gettempdir()) / "Downloadable" / "logs"
+LOG_DIR.mkdir(parents=True, exist_ok=True)
+LOG_FILE = LOG_DIR / "downloadable.log"
 TOKEN_FILE = ROOT / ".helper-token"
 STATE_FILE = ROOT / ".state.json"
 CHROMEOS_DOWNLOADS = Path("/mnt/chromeos/MyFiles/Downloads")
@@ -39,6 +45,26 @@ DEFAULT_VIDEO_DESTINATION = (CHROMEOS_DOWNLOADS if CHROMEOS_DOWNLOADS.is_dir() e
 TOKEN = TOKEN_FILE.read_text(encoding="utf-8").strip() if TOKEN_FILE.exists() else ""
 JOBS: dict[str, dict] = {}
 LOCK = threading.Lock()
+UPDATE_LOCK = threading.Lock()
+RESTART_LOCK = threading.Lock()
+
+
+def log_error(context: str, error: BaseException) -> None:
+    try:
+        with LOG_FILE.open("a", encoding="utf-8") as stream:
+            stream.write(f"\n[{__import__('datetime').datetime.now().isoformat(timespec='seconds')}] {context}\n")
+            stream.write("".join(traceback.format_exception(error)))
+    except OSError:
+        pass
+
+
+def open_log_folder() -> None:
+    if os.name == "nt":
+        os.startfile(LOG_DIR)  # type: ignore[attr-defined]
+    elif sys.platform == "darwin":
+        subprocess.Popen(["open", str(LOG_DIR)])
+    else:
+        subprocess.Popen(["xdg-open", str(LOG_DIR)])
 
 
 def add_windows_tool_path() -> None:
@@ -53,7 +79,10 @@ def version_tuple(value: str) -> tuple[int, ...]:
     return tuple(int(part) for part in re.findall(r"\d+", value)[:3]) or (0,)
 
 
-def check_for_update() -> None:
+def check_for_update() -> dict:
+    """Check GitHub for a newer release and stage it for the next restart."""
+    if not UPDATE_LOCK.acquire(blocking=False):
+        return {"status": "checking"}
     try:
         current = json.loads((ROOT / "extension" / "manifest.json").read_text(encoding="utf-8"))["version"]
         request = urllib.request.Request(RELEASE_API, headers={"Accept": "application/vnd.github+json", "User-Agent": "Downloadable-Updater"})
@@ -61,20 +90,39 @@ def check_for_update() -> None:
             release = json.loads(response.read().decode("utf-8"))
         latest = str(release.get("tag_name", "")).lstrip("v")
         if version_tuple(latest) <= version_tuple(current):
-            return
+            return {"status": "current", "current": current, "latest": latest}
         asset = next((item for item in release.get("assets", []) if str(item.get("name", "")).endswith(".zip")), None)
         if not asset:
-            return
+            return {"status": "unavailable", "current": current, "latest": latest}
         update_path = ROOT / ".downloadable-update.zip"
-        urllib.request.urlretrieve(asset["browser_download_url"], update_path)
-        (ROOT / ".update-available.json").write_text(json.dumps({"version": latest, "release_url": release.get("html_url", ""), "asset": asset["name"]}, indent=2), encoding="utf-8")
+        metadata = {"version": latest, "release_url": release.get("html_url", ""), "asset": asset["name"], "current": current}
+        available_path = ROOT / ".update-available.json"
+        if available_path.exists() and update_path.exists():
+            staged = json.loads(available_path.read_text(encoding="utf-8"))
+            if str(staged.get("version", "")) == latest:
+                return {"status": "staged", **staged}
+        temporary_path = ROOT / ".downloadable-update.zip.part"
+        try:
+            urllib.request.urlretrieve(asset["browser_download_url"], temporary_path)
+            with zipfile.ZipFile(temporary_path) as archive:
+                if not archive.namelist():
+                    raise ValueError("The update archive was empty.")
+            temporary_path.replace(update_path)
+            available_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
+        finally:
+            temporary_path.unlink(missing_ok=True)
         print(f"Update {latest} downloaded. Restart the helper to apply it.")
+        return {"status": "staged", **metadata}
     except urllib.error.HTTPError as error:
         if error.code == 404:  # Private repositories are intentionally invisible without credentials.
-            return
+            return {"status": "unavailable"}
         print(f"Update check skipped: {error}")
+        return {"status": "error", "error": str(error)}
     except Exception as error:
         print(f"Update check skipped: {error}")
+        return {"status": "error", "error": str(error)}
+    finally:
+        UPDATE_LOCK.release()
 
 
 def apply_staged_update() -> None:
@@ -85,7 +133,7 @@ def apply_staged_update() -> None:
         with zipfile.ZipFile(update_path) as archive:
             for member in archive.infolist():
                 name = Path(member.filename)
-                if not name.parts or name.parts[0] in {".git", ".venv"} or name.name in {".helper-token", ".state.json", "config.js", ".downloadable-update.zip", ".update-available.json"}:
+                if not name.parts or name.parts[0] in {".git", ".venv"} or name.name in {".helper-token", ".state.json", "config.js", ".downloadable-update.zip", ".downloadable-update.zip.part", ".update-available.json"}:
                     continue
                 target = (ROOT / name).resolve()
                 if ROOT not in target.parents:
@@ -109,6 +157,40 @@ def update_loop() -> None:
         threading.Event().wait(UPDATE_INTERVAL)
 
 
+def schedule_helper_restart() -> None:
+    """Restart the scheduled helper so a staged update can be applied."""
+    if not RESTART_LOCK.acquire(blocking=False):
+        return
+    try:
+        if os.name != "nt":
+            raise RuntimeError("Automatic helper restart is currently supported on Windows only.")
+        command = (
+            "Start-Sleep -Milliseconds 650; "
+            "schtasks /End /TN 'Downloadable Helper' 2>$null; "
+            "Start-Sleep -Milliseconds 700; "
+            "schtasks /Run /TN 'Downloadable Helper' 2>$null"
+        )
+        flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) | getattr(subprocess, "DETACHED_PROCESS", 0)
+        subprocess.Popen(
+            ["powershell.exe", "-NoProfile", "-WindowStyle", "Hidden", "-Command", command],
+            creationflags=flags,
+            close_fds=True,
+        )
+        threading.Timer(0.35, os._exit, args=(0,)).start()
+    finally:
+        RESTART_LOCK.release()
+
+
+def open_setup() -> None:
+    """Open the platform setup launcher so a user can repair dependencies."""
+    if os.name == "nt":
+        subprocess.Popen(["cmd.exe", "/c", "start", "", str(ROOT / "Downloadable.cmd")], cwd=ROOT)
+    elif sys.platform == "darwin":
+        subprocess.Popen(["open", str(ROOT / "launchers" / "macos" / "setup.command")])
+    else:
+        subprocess.Popen(["xdg-open", str(ROOT / "launchers" / "linux" / "setup.sh")])
+
+
 def load_state() -> dict:
     try:
         state = json.loads(STATE_FILE.read_text(encoding="utf-8"))
@@ -130,7 +212,7 @@ def save_state(state: dict) -> None:
 
 
 def choose_folder(output_format: str) -> str:
-    description = "MP3 audio" if output_format == "mp3" else "MP4 video"
+    description = {"mp3": "MP3 audio", "mp4": "MP4 video", "png": "PNG photos"}[output_format]
     if os.name == "nt":
         import ctypes
         from ctypes import wintypes
@@ -255,6 +337,12 @@ def is_tiktok_sound_url(value: str) -> bool:
     return (host == "tiktok.com" or host.endswith(".tiktok.com")) and "/music/" in parsed.path
 
 
+def is_tiktok_photo_url(value: str) -> bool:
+    parsed = urlparse(value)
+    host = (parsed.hostname or "").lower()
+    return (host == "tiktok.com" or host.endswith(".tiktok.com")) and "/photo/" in parsed.path
+
+
 def is_tiktok_url(value: str) -> bool:
     host = (urlparse(value).hostname or "").lower()
     return host == "tiktok.com" or host.endswith(".tiktok.com")
@@ -271,7 +359,120 @@ def update_job(job_id: str, **changes: object) -> None:
         JOBS[job_id].update(changes)
 
 
+def _image_urls(value: object) -> list[str]:
+    """Collect direct image URLs from TikTok's varied embedded post shapes."""
+    found: list[str] = []
+
+    def add(candidate: object) -> None:
+        if not isinstance(candidate, str):
+            return
+        candidate = candidate.replace("\\u002F", "/").replace("\\/", "/")
+        if candidate.startswith("//"):
+            candidate = "https:" + candidate
+        if not candidate.startswith(("http://", "https://")):
+            return
+        lower = candidate.lower().split("?", 1)[0]
+        if any(ext in lower for ext in (".jpg", ".jpeg", ".png", ".webp", ".avif")) and candidate not in found:
+            found.append(candidate)
+
+    def walk(node: object, image_context: bool = False) -> None:
+        if isinstance(node, dict):
+            for key, child in node.items():
+                key_lower = str(key).lower()
+                child_context = image_context or any(
+                    word in key_lower for word in (
+                        "imagepost", "image_url", "imageurl", "display_image", "url_list",
+                        "image_list", "image_urls", "photo_images", "photo_list",
+                    )
+                )
+                if isinstance(child, list) and child_context:
+                    for item in child:
+                        add(item)
+                elif isinstance(child, str) and child_context:
+                    add(child)
+                walk(child, child_context)
+        elif isinstance(node, list):
+            for child in node:
+                if image_context:
+                    add(child)
+                walk(child, image_context)
+        elif image_context:
+            add(node)
+
+    walk(value)
+    return found
+
+
+def extract_tiktok_photo_urls(html: str) -> list[str]:
+    """Extract carousel image URLs from TikTok's embedded JSON state."""
+    urls: list[str] = []
+    scripts = re.findall(
+        r'<script[^>]+type=["\']application/json["\'][^>]*>(.*?)</script>',
+        html,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    for script in scripts:
+        try:
+            payload = json.loads(script)
+        except json.JSONDecodeError:
+            continue
+        for candidate in _image_urls(payload):
+            if candidate not in urls:
+                urls.append(candidate)
+    return urls
+
+
+def fetch_tiktok_photo_urls(url: str) -> tuple[list[str], dict]:
+    """Fetch embedded photo data and oEmbed metadata for a TikTok photo post."""
+    request = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+    with urllib.request.urlopen(request, timeout=30) as response:
+        html = response.read().decode("utf-8", "replace")
+    urls = extract_tiktok_photo_urls(html)
+    embed_value = url.replace("/photo/", "/video/", 1)
+    oembed_url = "https://www.tiktok.com/oembed?url=" + urllib.parse.quote(embed_value, safe="")
+    request = urllib.request.Request(oembed_url, headers={"User-Agent": "Mozilla/5.0"})
+    with urllib.request.urlopen(request, timeout=30) as response:
+        metadata = json.loads(response.read().decode("utf-8"))
+    thumbnail = str(metadata.get("thumbnail_url") or "")
+    if thumbnail and thumbnail not in urls:
+        urls.append(thumbnail)
+    return urls, metadata
+
+
+def run_photo_download(job_id: str, url: str, destination: Path) -> None:
+    """Save the image exposed by a TikTok photo post as a PNG."""
+    update_job(job_id, status="downloading", message="Preparing photo…")
+    image_urls, metadata = fetch_tiktok_photo_urls(url)
+    if not image_urls:
+        raise RuntimeError("TikTok did not expose a downloadable photo for this post.")
+    title = re.sub(r"[^A-Za-z0-9._ -]+", "", str(metadata.get("title") or "TikTok photo")).strip() or "TikTok photo"
+    post_id = urlparse(url).path.rstrip("/").rsplit("/", 1)[-1] or "photo"
+    total = len(image_urls)
+    ffmpeg = shutil.which("ffmpeg") or "ffmpeg"
+    outputs: list[str] = []
+    for index, image_url in enumerate(image_urls, start=1):
+        suffix = f" ({index:02d})" if total > 1 else ""
+        stem = f"{title[:120]} [{post_id}]{suffix}"
+        source = destination / f".{stem}.source.jpg"
+        output = destination / f"{stem}.png"
+        urllib.request.urlretrieve(image_url, source)
+        update_job(job_id, progress=10 + (index - 1) * 80 / total, message=f"Converting photo {index} of {total}…")
+        result = subprocess.run(
+            [ffmpeg, "-y", "-i", str(source), "-frames:v", "1", str(output)],
+            capture_output=True, text=True, check=False,
+            **({"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt" else {}),
+        )
+        source.unlink(missing_ok=True)
+        if result.returncode != 0 or not output.exists():
+            raise RuntimeError("Could not convert a TikTok photo to PNG.")
+        outputs.append(output.name)
+    update_job(job_id, status="complete", progress=100, message=f"Saved {total} photo{'s' if total != 1 else ''}.", filename=outputs[0] if total == 1 else f"{total} PNG files")
+
+
 def run_download(job_id: str, url: str, output_format: str, destination: Path) -> None:
+    if output_format == "png":
+        run_photo_download(job_id, url, destination)
+        return
     output_template = str(destination / "%(title).180B [%(id)s].%(ext)s")
     command = [
         str(ROOT / ".venv" / ("Scripts" if os.name == "nt" else "bin") / ("yt-dlp.exe" if os.name == "nt" else "yt-dlp")),
@@ -321,6 +522,7 @@ def run_download(job_id: str, url: str, output_format: str, destination: Path) -
         errors="replace",
         **({"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt" else {}),
     )
+    update_job(job_id, process=process)
     last_line = ""
     result_path: Path | None = None
     assert process.stdout is not None
@@ -353,6 +555,10 @@ def run_download(job_id: str, url: str, output_format: str, destination: Path) -
             update_job(job_id, message="Preparing YouTube streams…")
 
     return_code = process.wait()
+    update_job(job_id, process=None)
+    with LOCK:
+        if JOBS.get(job_id, {}).get("error") == "Download canceled.":
+            return
     if return_code != 0:
         if is_tiktok_sound_url(url):
             error = (
@@ -377,6 +583,7 @@ def download_worker(job_id: str, url: str, output_format: str, destination: Path
     try:
         run_download(job_id, url, output_format, destination)
     except Exception as error:
+        log_error(f"Download failed for {url}", error)
         update_job(job_id, status="error", error=f"Helper failed: {error}")
 
 
@@ -405,7 +612,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def authenticated(self) -> bool:
         if not TOKEN or self.headers.get("X-Helper-Token") != TOKEN:
-            self.send_json(403, {"error": "Helper authentication failed. Run setup.command again."})
+            self.send_json(403, {"error": "Helper authentication failed. Run the platform setup launcher again."})
             return False
         origin = self.headers.get("Origin", "")
         # Chrome may omit Origin on a privileged extension request. The token is
@@ -437,7 +644,9 @@ class Handler(BaseHTTPRequestHandler):
                 {
                     "mp3_destination": state.get("mp3_destination", ""),
                     "mp4_destination": state.get("mp4_destination", ""),
+                    "png_destination": state.get("png_destination", ""),
                     "active_job": active,
+                    "version": json.loads((ROOT / "extension" / "manifest.json").read_text(encoding="utf-8")).get("version", ""),
                     "update": json.loads((ROOT / ".update-available.json").read_text(encoding="utf-8")) if (ROOT / ".update-available.json").exists() else None,
                 },
             )
@@ -458,8 +667,8 @@ class Handler(BaseHTTPRequestHandler):
             body = self.read_json()
             if self.path == "/choose-folder":
                 output_format = str(body.get("format", ""))
-                if output_format not in {"mp3", "mp4"}:
-                    raise ValueError("Choose either the MP3 or MP4 folder.")
+                if output_format not in {"mp3", "mp4", "png"}:
+                    raise ValueError("Choose an MP3, MP4, or PNG folder.")
                 destination = choose_folder(output_format)
                 state = load_state()
                 state[f"{output_format}_destination"] = destination
@@ -473,8 +682,10 @@ class Handler(BaseHTTPRequestHandler):
                 download_url = resolve_tiktok_short_url(url)
                 if not valid_media_url(download_url):
                     raise ValueError("That is not a supported YouTube or TikTok video URL.")
-                if output_format not in {"mp3", "mp4"}:
-                    raise ValueError("Format must be MP3 or MP4.")
+                if output_format not in {"mp3", "mp4", "png"}:
+                    raise ValueError("Format must be MP3, MP4, or PNG.")
+                if output_format == "png" and not is_tiktok_photo_url(download_url):
+                    raise ValueError("PNG downloads are only available for TikTok /photo/ posts.")
                 if not destination.is_dir():
                     raise ValueError("The selected destination folder no longer exists.")
                 if not os.access(destination, os.W_OK):
@@ -494,14 +705,49 @@ class Handler(BaseHTTPRequestHandler):
                 ).start()
                 self.send_json(202, {"job_id": job_id})
                 return
+            cancel_match = re.fullmatch(r"/jobs/([a-f0-9-]+)/cancel", self.path)
+            if cancel_match:
+                job_id = cancel_match.group(1)
+                with LOCK:
+                    job = JOBS.get(job_id)
+                    process = job.get("process") if job else None
+                if not job:
+                    self.send_json(404, {"error": "Job not found."})
+                    return
+                if process is not None and process.poll() is None:
+                    process.terminate()
+                    update_job(job_id, status="error", error="Download canceled.", message="Download canceled.", process=None)
+                else:
+                    update_job(job_id, status="error", error="Download canceled.", message="Download canceled.")
+                self.send_json(200, {"canceled": True})
+                return
             if self.path == "/reset-settings":
                 save_state({})
                 self.send_json(200, {"reset": True})
+                return
+            if self.path == "/open-logs":
+                open_log_folder()
+                self.send_json(200, {"opened": True, "path": str(LOG_DIR)})
+                return
+            if self.path == "/check-update":
+                result = check_for_update()
+                self.send_json(200, result)
+                return
+            if self.path == "/restart":
+                if not (ROOT / ".downloadable-update.zip").exists():
+                    raise ValueError("There is no staged update to apply.")
+                self.send_json(202, {"restarting": True})
+                threading.Thread(target=schedule_helper_restart, daemon=True).start()
+                return
+            if self.path == "/repair-setup":
+                open_setup()
+                self.send_json(200, {"opened": True})
                 return
             self.send_json(404, {"error": "Not found."})
         except (ValueError, json.JSONDecodeError) as error:
             self.send_json(400, {"error": str(error)})
         except Exception as error:
+            log_error(f"HTTP {self.command} {self.path}", error)
             self.send_json(500, {"error": str(error)})
 
 
@@ -509,11 +755,11 @@ def main() -> None:
     add_windows_tool_path()
     apply_staged_update()
     if not TOKEN:
-        print("Missing helper token. Run setup.command or setup.ps1 first.", file=sys.stderr)
+        print("Missing helper token. Run the platform setup launcher first.", file=sys.stderr)
         raise SystemExit(1)
     yt_dlp = ROOT / ".venv" / ("Scripts" if os.name == "nt" else "bin") / ("yt-dlp.exe" if os.name == "nt" else "yt-dlp")
     if not yt_dlp.exists():
-        print("yt-dlp is not installed. Run setup.command or setup.ps1 first.", file=sys.stderr)
+        print("yt-dlp is not installed. Run the platform setup launcher first.", file=sys.stderr)
         raise SystemExit(1)
     if not shutil.which("ffmpeg"):
         print("Warning: ffmpeg is not installed or is not on PATH. Folder picking will work, but downloads need ffmpeg.", file=sys.stderr)

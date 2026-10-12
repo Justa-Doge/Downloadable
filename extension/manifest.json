@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Personal Video & Audio Downloader",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "description": "Save permitted YouTube or TikTok media as MP3 or MP4 through a local helper on Windows, macOS, Linux, and ChromeOS.",
   "permissions": ["activeTab", "tabs", "storage"],
   "host_permissions": [

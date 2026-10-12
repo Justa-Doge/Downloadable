@@ -8,6 +8,12 @@
   </head>
   <body>
     <main>
+      <section id="first-run" class="first-run" hidden>
+        <div class="first-run-heading">Before you start</div>
+        <p>Please read the included README.md first. It explains setup, supported links, folders, and troubleshooting.</p>
+        <label class="readme-check"><input id="readme-confirm" type="checkbox"> I have read README.md</label>
+        <button id="continue-button" class="continue-button" type="button" disabled>Continue</button>
+      </section>
       <div class="title-row">
         <h1>Downloadable</h1>
         <button id="settings-button" class="settings-button" type="button" aria-expanded="false" aria-controls="settings-panel" title="Settings">⚙</button>
@@ -23,8 +29,13 @@
         <div class="settings-actions">
           <button id="reconnect-button" type="button">Reconnect</button>
           <button id="reset-folders-button" type="button">Reset folders</button>
+          <button id="open-logs-button" type="button">Open error logs</button>
           <button id="extensions-button" type="button">Extension details</button>
+          <button id="check-update-button" type="button">Check for updates</button>
+          <button id="restart-update-button" type="button" hidden>Restart and apply update</button>
+          <button id="repair-setup-button" type="button">Repair setup</button>
         </div>
+        <p id="update-status" class="update-status">Update checks run automatically every hour.</p>
         <p class="settings-note">The helper stays on this computer and only accepts this extension's local token.</p>
       </section>
 
@@ -43,6 +54,11 @@
           <button class="folder-button" data-format="mp4" type="button">Choose…</button>
           <p id="mp4-folder-path" title="">No folder selected</p>
         </div>
+        <div class="folder-setting photo-only" hidden>
+          <span>PNG folder</span>
+          <button class="folder-button" data-format="png" type="button">Choose…</button>
+          <p id="png-folder-path" title="">No folder selected</p>
+        </div>
       </section>
 
       <div class="format-buttons">
@@ -54,11 +70,16 @@
           <strong>MP4</strong>
           <span>Video + audio</span>
         </button>
+        <button class="download-button png photo-only" data-format="png" type="button" hidden>
+          <strong>PNG/s</strong>
+          <span>Photo image</span>
+        </button>
       </div>
 
       <div id="progress-wrap" class="progress-wrap" hidden>
         <div class="progress-track"><div id="progress-bar"></div></div>
         <p id="progress-text">Starting…</p>
+        <button id="cancel-button" class="cancel-button" type="button" hidden>Cancel download</button>
       </div>
 
       <p id="status" class="status" role="status"></p>

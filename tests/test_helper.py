@@ -96,10 +96,29 @@ class SharedHelperTests(unittest.TestCase):
         self.assertTrue(helper.valid_media_url("https://www.youtube.com/watch?v=abc"))
         self.assertTrue(helper.valid_media_url("https://youtu.be/abc"))
         self.assertTrue(helper.valid_media_url("https://www.tiktok.com/@user/video/123"))
+        self.assertTrue(helper.valid_media_url("https://www.tiktok.com/@user/photo/123"))
         self.assertTrue(helper.valid_media_url("https://www.tiktok.com/t/ZTRC5xgJp"))
         self.assertTrue(helper.valid_media_url("https://www.tiktok.com/v/123"))
         self.assertTrue(helper.valid_media_url("https://vm.tiktok.com/ZMabc123/"))
         self.assertFalse(helper.valid_media_url("https://example.com/video/123"))
+
+    def test_tiktok_photo_url_is_detected(self):
+        self.assertTrue(helper.is_tiktok_photo_url("https://www.tiktok.com/@user/photo/123"))
+        self.assertFalse(helper.is_tiktok_photo_url("https://www.tiktok.com/@user/video/123"))
+
+    def test_tiktok_carousel_images_are_extracted_from_embedded_json(self):
+        html = (
+            '<script type="application/json">'
+            '{"itemInfo":{"itemStruct":{"imagePost":{"images":['
+            '{"imageURL":{"url_list":["https://cdn.example/one.jpeg"]}},'
+            '{"imageURL":{"url_list":["https://cdn.example/two.webp"]}}'
+            ']}}}}'
+            '</script>'
+        )
+        self.assertEqual(
+            helper.extract_tiktok_photo_urls(html),
+            ["https://cdn.example/one.jpeg", "https://cdn.example/two.webp"],
+        )
 
     def test_tiktok_short_url_resolution_keeps_original_on_failure(self):
         short = "https://www.tiktok.com/t/example"
@@ -127,8 +146,9 @@ class SharedHelperTests(unittest.TestCase):
 
         output = io.StringIO()
         with mock.patch.object(helper.urllib.request, "urlopen", return_value=Response()), contextlib.redirect_stdout(output):
-            helper.check_for_update()
+            result = helper.check_for_update()
         self.assertNotIn("Update check skipped", output.getvalue())
+        self.assertEqual(result["status"], "current")
 
     def test_private_repository_404_is_silent(self):
         error = helper.urllib.error.HTTPError("https://api.github.com/", 404, "Not Found", {}, None)

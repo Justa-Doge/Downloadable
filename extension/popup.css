@@ -12,6 +12,13 @@ body {
 
 main { padding: 18px; }
 
+.first-run { margin-bottom: 14px; padding: 12px; border: 1px solid #536b9f; border-radius: 10px; background: #1b2436; color: #dbe7ff; }
+.first-run-heading { margin-bottom: 6px; color: #fff; font-size: 14px; font-weight: 700; }
+.first-run p { margin: 0 0 10px; color: #b9c8e8; font-size: 11px; line-height: 1.4; }
+.readme-check { display: flex; align-items: center; gap: 7px; margin-bottom: 10px; font-size: 11px; }
+.continue-button { width: 100%; padding: 8px 10px; border: 0; border-radius: 7px; background: #4f7cff; color: #fff; cursor: pointer; font: inherit; font-size: 11px; font-weight: 700; }
+.continue-button:disabled { cursor: not-allowed; opacity: .45; }
+
 .title-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 
 h1 {
@@ -46,6 +53,9 @@ h1 {
 .settings-actions { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 11px; }
 .settings-actions button { padding: 7px 9px; border: 1px solid #343945; border-radius: 7px; background: #222630; color: #e4e7ed; cursor: pointer; font: inherit; font-size: 11px; }
 .settings-actions button:hover { border-color: #71a7ff; }
+.update-status { margin-top: 10px; color: #8d93a0; font-size: 10px; line-height: 1.35; }
+.update-status.ready { color: #4ade80; }
+.update-status.failed { color: #fb7185; }
 .settings-note { margin-top: 10px; color: #6f7582; font-size: 10px; line-height: 1.35; }
 
 p { margin: 0; }
@@ -145,11 +155,14 @@ p { margin: 0; }
 .download-button:disabled, .folder-button:disabled { opacity: .45; cursor: not-allowed; }
 .mp3 { background: linear-gradient(135deg, #7c3aed, #a855f7); }
 .mp4 { background: linear-gradient(135deg, #dc2626, #f43f5e); }
+.png { background: linear-gradient(135deg, #0891b2, #06b6d4); }
 
 .progress-wrap { margin-top: 15px; }
 .progress-track { height: 7px; overflow: hidden; border-radius: 10px; background: #292d35; }
 #progress-bar { width: 0; height: 100%; background: #4ade80; transition: width .25s ease; }
 #progress-text { margin-top: 7px; color: #b8bdc8; font-size: 12px; }
+.cancel-button { margin-top: 8px; padding: 7px 10px; border: 1px solid #7f1d1d; border-radius: 7px; background: #3f1d24; color: #fecaca; cursor: pointer; font: inherit; font-size: 11px; }
+.cancel-button:hover { border-color: #fb7185; }
 .status { min-height: 18px; margin-top: 12px; font-size: 12px; color: #fbbf24; }
 .status.success { color: #4ade80; }
 .status.error { color: #fb7185; }

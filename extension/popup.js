@@ -5,7 +5,8 @@ const titleElement = document.querySelector("#video-title");
 const urlInput = document.querySelector("#media-url");
 const folderElements = {
   mp3: document.querySelector("#mp3-folder-path"),
-  mp4: document.querySelector("#mp4-folder-path")
+  mp4: document.querySelector("#mp4-folder-path"),
+  png: document.querySelector("#png-folder-path")
 };
 const folderButtons = [...document.querySelectorAll(".folder-button")];
 const downloadButtons = [...document.querySelectorAll(".download-button")];
@@ -18,12 +19,27 @@ const settingsPanel = document.querySelector("#settings-panel");
 const helperStatus = document.querySelector("#helper-status");
 const reconnectButton = document.querySelector("#reconnect-button");
 const resetFoldersButton = document.querySelector("#reset-folders-button");
+const openLogsButton = document.querySelector("#open-logs-button");
 const extensionsButton = document.querySelector("#extensions-button");
+const checkUpdateButton = document.querySelector("#check-update-button");
+const restartUpdateButton = document.querySelector("#restart-update-button");
+const repairSetupButton = document.querySelector("#repair-setup-button");
+const updateStatus = document.querySelector("#update-status");
+const cancelButton = document.querySelector("#cancel-button");
+const firstRun = document.querySelector("#first-run");
+const readmeConfirm = document.querySelector("#readme-confirm");
+const continueButton = document.querySelector("#continue-button");
 
 let currentUrl = "";
-const destinations = { mp3: "", mp4: "" };
+const destinations = { mp3: "", mp4: "", png: "" };
 let pollTimer = null;
 let helperConnected = false;
+let activeJobId = null;
+
+async function initializeFirstRun() {
+  const { readmeAcknowledged } = await chrome.storage.local.get("readmeAcknowledged");
+  firstRun.hidden = Boolean(readmeAcknowledged);
+}
 
 function showDestination(format, destination) {
   destinations[format] = destination || "";
@@ -47,6 +63,18 @@ function setHelperStatus(connected, message = "") {
   reconnectButton.disabled = false;
 }
 
+function showUpdateStatus(update, version = "") {
+  if (update?.version) {
+    updateStatus.textContent = `Downloadable ${update.version} is ready. Restart the helper to apply it.`;
+    updateStatus.className = "update-status ready";
+    restartUpdateButton.hidden = false;
+    return;
+  }
+  restartUpdateButton.hidden = true;
+  updateStatus.textContent = version ? `Downloadable ${version} is up to date.` : "Update checks run automatically every hour.";
+  updateStatus.className = "update-status";
+}
+
 function setBusy(busy) {
   folderButtons.forEach((button) => { button.disabled = busy; });
   const type = mediaType(currentUrl);
@@ -55,8 +83,15 @@ function setBusy(busy) {
   });
 }
 
+function setPhotoMode(photo) {
+  document.querySelectorAll(".photo-only").forEach((element) => {
+    element.hidden = !photo;
+  });
+  document.querySelector(".mp4").hidden = photo;
+}
+
 async function helperRequest(path, options = {}) {
-  if (!token) throw new Error("Helper is not configured. Run setup.cmd, then reload the extension.");
+  if (!token) throw new Error("Helper is not configured. Run Downloadable.cmd, then reload the extension.");
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 5000);
   let response;
@@ -73,7 +108,7 @@ async function helperRequest(path, options = {}) {
     });
   } catch (error) {
     if (error.name === "AbortError") throw new Error("The local helper did not respond. Open Settings and choose Reconnect.");
-    throw new Error("Could not reach the local helper. Make sure setup.cmd completed.");
+    throw new Error("Could not reach the local helper. Make sure Downloadable.cmd completed.");
   } finally {
     clearTimeout(timeout);
   }
@@ -115,8 +150,10 @@ function mediaType(url) {
         ["vm.tiktok.com", "vt.tiktok.com"].includes(hostname) ||
         ((hostname === "tiktok.com" || hostname === "www.tiktok.com") &&
           (parsed.pathname.startsWith("/t/") || parsed.pathname.startsWith("/v/"))));
+    const tiktokPhoto = tiktokSite && parsed.pathname.includes("/photo/");
     const tiktokSound = tiktokSite && parsed.pathname.includes("/music/");
     if (tiktokSound) return "sound";
+    if (tiktokPhoto) return "photo";
     if (youtubeVideo || youtubeShortLink || tiktokMedia) return "video";
     return "";
   } catch {
@@ -128,13 +165,14 @@ function useUrl(value, announce = true) {
   const candidate = value.trim();
   const type = mediaType(candidate);
   currentUrl = type ? candidate : "";
+  setPhotoMode(type === "photo");
   downloadButtons.forEach((button) => {
     button.disabled = !currentUrl || type === "sound";
   });
   if (!announce) return;
   if (type === "sound") {
     setStatus("Open a TikTok video using this sound, then choose MP3.", "error");
-  } else if (type === "video") {
+  } else if (type === "video" || type === "photo") {
     setStatus("Link ready.", "success");
   } else {
     setStatus("Paste a YouTube or TikTok video or sound link.", "error");
@@ -162,14 +200,14 @@ async function initialize() {
       : "Paste a YouTube or TikTok link below.");
   }
 
-  const cached = await chrome.storage.local.get(["mp3Destination", "mp4Destination"]);
-  for (const format of ["mp3", "mp4"]) {
+  const cached = await chrome.storage.local.get(["mp3Destination", "mp4Destination", "pngDestination"]);
+  for (const format of ["mp3", "mp4", "png"]) {
     showDestination(format, cached[`${format}Destination`] || "");
   }
 
   try {
     const state = await connectHelper(false);
-    for (const format of ["mp3", "mp4"]) {
+    for (const format of ["mp3", "mp4", "png"]) {
       const savedDestination = state[`${format}_destination`] || destinations[format];
       if (savedDestination) {
         showDestination(format, savedDestination);
@@ -177,9 +215,8 @@ async function initialize() {
       }
     }
     if (state.active_job) trackJob(state.active_job);
-    if (state.update) {
-      setStatus(`Downloadable ${state.update.version} is ready. Restart the helper to apply it.`, "success");
-    }
+    showUpdateStatus(state.update, state.version);
+    if (state.update) setStatus(`Downloadable ${state.update.version} is ready. Restart the helper to apply it.`, "success");
   } catch (error) {
     setStatus(error.message || "Could not connect to the local helper.", "error");
   }
@@ -207,7 +244,7 @@ resetFoldersButton.addEventListener("click", async () => {
   resetFoldersButton.disabled = true;
   try {
     await helperRequest("/reset-settings", { method: "POST", body: "{}" });
-    for (const format of ["mp3", "mp4"]) {
+    for (const format of ["mp3", "mp4", "png"]) {
       showDestination(format, "");
       await rememberDestination(format, "");
     }
@@ -216,6 +253,81 @@ resetFoldersButton.addEventListener("click", async () => {
     setStatus(error.message, "error");
   } finally {
     resetFoldersButton.disabled = false;
+  }
+});
+
+openLogsButton.addEventListener("click", async () => {
+  openLogsButton.disabled = true;
+  try {
+    await helperRequest("/open-logs", { method: "POST", body: "{}" });
+    setStatus("Error log folder opened.", "success");
+  } catch (error) {
+    setStatus(error.message, "error");
+  } finally {
+    openLogsButton.disabled = false;
+  }
+});
+
+checkUpdateButton.addEventListener("click", async () => {
+  checkUpdateButton.disabled = true;
+  updateStatus.textContent = "Checking for updates…";
+  updateStatus.className = "update-status";
+  try {
+    const result = await helperRequest("/check-update", { method: "POST", body: "{}" });
+    showUpdateStatus(result.status === "staged" ? result : null, result.current || "");
+    setStatus(result.status === "staged" ? `Downloadable ${result.version} is ready. Restart the helper to apply it.` : "Downloadable is up to date.", "success");
+  } catch (error) {
+    updateStatus.textContent = "Update check failed.";
+    updateStatus.className = "update-status failed";
+    setStatus(error.message, "error");
+  } finally {
+    checkUpdateButton.disabled = false;
+  }
+});
+
+restartUpdateButton.addEventListener("click", async () => {
+  restartUpdateButton.disabled = true;
+  setStatus("Restarting the helper and applying the update…");
+  try {
+    await helperRequest("/restart", { method: "POST", body: "{}" });
+    updateStatus.textContent = "Update applied. Reconnecting…";
+    updateStatus.className = "update-status ready";
+    setTimeout(async () => {
+      try {
+        const state = await connectHelper(false);
+        showUpdateStatus(state.update, state.version);
+        setStatus("Downloadable is up to date.", "success");
+      } catch (_) {
+        // The helper may need another moment to come back after task restart.
+      }
+    }, 2200);
+  } catch (error) {
+    restartUpdateButton.disabled = false;
+    setStatus(error.message, "error");
+  }
+});
+
+repairSetupButton.addEventListener("click", async () => {
+  repairSetupButton.disabled = true;
+  try {
+    await helperRequest("/repair-setup", { method: "POST", body: "{}" });
+    setStatus("Setup opened. Follow its prompts to repair Downloadable.", "success");
+  } catch (error) {
+    setStatus(error.message, "error");
+  } finally {
+    repairSetupButton.disabled = false;
+  }
+});
+
+cancelButton.addEventListener("click", async () => {
+  if (!activeJobId) return;
+  cancelButton.disabled = true;
+  try {
+    await helperRequest(`/jobs/${activeJobId}/cancel`, { method: "POST", body: "{}" });
+    setStatus("Cancel requested…");
+  } catch (error) {
+    cancelButton.disabled = false;
+    setStatus(error.message, "error");
   }
 });
 
@@ -275,9 +387,12 @@ downloadButtons.forEach((button) => {
 });
 
 function trackJob(jobId) {
+  activeJobId = jobId;
   clearTimeout(pollTimer);
   setBusy(true);
   progressWrap.hidden = false;
+  cancelButton.hidden = false;
+  cancelButton.disabled = false;
 
   const poll = async () => {
     try {
@@ -287,11 +402,15 @@ function trackJob(jobId) {
       progressText.textContent = job.message || `${percent.toFixed(1)}%`;
 
       if (job.status === "complete") {
+        activeJobId = null;
+        cancelButton.hidden = true;
         setBusy(false);
         setStatus(`Saved: ${job.filename}`, "success");
         return;
       }
       if (job.status === "error") {
+        activeJobId = null;
+        cancelButton.hidden = true;
         setBusy(false);
         setStatus(job.error || "Download failed.", "error");
         return;
@@ -306,3 +425,14 @@ function trackJob(jobId) {
 }
 
 initialize();
+initializeFirstRun();
+
+readmeConfirm.addEventListener("change", () => {
+  continueButton.disabled = !readmeConfirm.checked;
+});
+
+continueButton.addEventListener("click", async () => {
+  if (!readmeConfirm.checked) return;
+  await chrome.storage.local.set({ readmeAcknowledged: true });
+  firstRun.hidden = true;
+});
