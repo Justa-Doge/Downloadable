@@ -11,47 +11,19 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "helper"))
 import helper
 
 
-class FakeFunction:
-    def __init__(self, callback):
-        self.callback = callback
-        self.argtypes = None
-        self.restype = None
-
-    def __call__(self, *args):
-        return self.callback(*args)
-
-
 class FolderPickerTests(unittest.TestCase):
     @unittest.skipUnless(helper.os.name == "nt", "Windows picker test")
-    def test_windows_picker_preserves_64_bit_pidl(self):
-        import ctypes
-
+    def test_windows_picker_uses_native_sta_dialog(self):
         selected = str(Path(tempfile.gettempdir()).resolve())
-        large_pidl = 0x1234567887654321
-        freed = []
-        uninitialized = []
-
-        shell32 = type("Shell32", (), {})()
-        shell32.SHBrowseForFolderW = FakeFunction(lambda _info: large_pidl)
-
-        def get_path(pidl, buffer):
-            self.assertEqual(pidl, large_pidl)
-            buffer.value = selected
-            return 1
-
-        shell32.SHGetPathFromIDListW = FakeFunction(get_path)
-        ole32 = type("Ole32", (), {})()
-        ole32.CoInitializeEx = FakeFunction(lambda _reserved, _mode: 0)
-        ole32.CoTaskMemFree = FakeFunction(lambda pidl: freed.append(pidl))
-        ole32.CoUninitialize = FakeFunction(lambda: uninitialized.append(True))
-        fake_loader = type("Loader", (), {"shell32": shell32, "ole32": ole32})()
-
-        with mock.patch.object(ctypes, "windll", fake_loader):
+        completed = type("Completed", (), {"returncode": 0, "stdout": selected, "stderr": ""})()
+        with mock.patch.object(helper.subprocess, "run", return_value=completed) as run:
             self.assertEqual(helper.choose_folder("mp3"), selected)
-        self.assertEqual(freed, [large_pidl])
-        self.assertEqual(uninitialized, [True])
-        self.assertEqual(shell32.SHGetPathFromIDListW.argtypes[0], ctypes.c_void_p)
-        self.assertEqual(ole32.CoTaskMemFree.argtypes, [ctypes.c_void_p])
+        command = run.call_args.args[0]
+        self.assertEqual(command[:3], ["powershell.exe", "-NoProfile", "-STA"])
+        startupinfo = run.call_args.kwargs["startupinfo"]
+        self.assertTrue(startupinfo.dwFlags & helper.subprocess.STARTF_USESHOWWINDOW)
+        self.assertEqual(startupinfo.wShowWindow, helper.subprocess.SW_HIDE)
+        self.assertIn("IFileOpenDialog", command[-1])
 
 
 class SharedHelperTests(unittest.TestCase):

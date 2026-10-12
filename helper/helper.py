@@ -214,51 +214,62 @@ def save_state(state: dict) -> None:
 def choose_folder(output_format: str) -> str:
     description = {"mp3": "MP3 audio", "mp4": "MP4 video", "png": "PNG photos"}[output_format]
     if os.name == "nt":
-        import ctypes
-        from ctypes import wintypes
-
-        class BROWSEINFO(ctypes.Structure):
-            _fields_ = [
-                ("hwndOwner", wintypes.HWND), ("pidlRoot", ctypes.c_void_p),
-                ("pszDisplayName", wintypes.LPWSTR), ("lpszTitle", wintypes.LPCWSTR),
-                ("ulFlags", wintypes.UINT), ("lpfn", ctypes.c_void_p),
-                ("lParam", wintypes.LPARAM), ("iImage", ctypes.c_int),
-            ]
-
-        display_name = ctypes.create_unicode_buffer(260)
-        info = BROWSEINFO(
-            None, None, ctypes.cast(display_name, wintypes.LPWSTR), f"Choose where {description} should be saved",
-            0x0001 | 0x0040, None, 0, 0,
+        picker_script = (
+            "$source = @'\n"
+            "using System;\n"
+            "using System.Runtime.InteropServices;\n"
+            "namespace DownloadablePicker {\n"
+            "  [ComImport, Guid(\"42f85136-db7e-439c-85f1-e4075d135fc8\"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]\n"
+            "  public interface IFileDialog {\n"
+            "    [PreserveSig] int Show(IntPtr parent);\n"
+            "    void SetFileTypes(uint count, IntPtr specs); void SetFileTypeIndex(uint index); uint GetFileTypeIndex();\n"
+            "    void Advise(IntPtr sink, out uint cookie); void Unadvise(uint cookie); void SetOptions(uint options); void GetOptions(out uint options);\n"
+            "    void SetDefaultFolder(IShellItem item); void SetFolder(IShellItem item); void GetFolder(out IShellItem item); void GetCurrentSelection(out IShellItem item);\n"
+            "    void SetFileName([MarshalAs(UnmanagedType.LPWStr)] string name); void GetFileName([MarshalAs(UnmanagedType.LPWStr)] out string name);\n"
+            "    void SetTitle([MarshalAs(UnmanagedType.LPWStr)] string title); void SetOkButtonLabel([MarshalAs(UnmanagedType.LPWStr)] string text);\n"
+            "    void SetFileNameLabel([MarshalAs(UnmanagedType.LPWStr)] string text); void GetResult(out IShellItem item);\n"
+            "    void AddPlace(IShellItem item, int alignment); void SetDefaultExtension([MarshalAs(UnmanagedType.LPWStr)] string extension);\n"
+            "    void Close(int hr); void SetClientGuid(ref Guid guid); void ClearClientData(); void SetFilter(IntPtr filter);\n"
+            "  }\n"
+            "  [ComImport, Guid(\"D57C7288-D4AD-4768-BE02-9D969532D960\"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]\n"
+            "  public interface IFileOpenDialog : IFileDialog { void GetResults(out IntPtr results); void GetSelectedItems(out IntPtr items); }\n"
+            "  [ComImport, Guid(\"43826D1E-E718-42EE-BC55-A1E261C37BFE\"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]\n"
+            "  public interface IShellItem { void BindToHandler(IntPtr p, ref Guid bhid, ref Guid riid, out IntPtr ppv); void GetParent(out IShellItem item); void GetDisplayName(uint sigdn, out IntPtr name); void GetAttributes(uint mask, out uint attrs); void Compare(IShellItem item, uint hint, out int order); }\n"
+            "  public static class NativePicker {\n"
+            "    [DllImport(\"user32.dll\")] private static extern IntPtr GetForegroundWindow();\n"
+            "    public static string Show(string title) {\n"
+            "      var type = Type.GetTypeFromCLSID(new Guid(\"DC1C5A9C-E88A-4DDE-A5A1-60F82A20AEF7\"));\n"
+            "      var dialog = (IFileOpenDialog)Activator.CreateInstance(type);\n"
+            "      dialog.SetOptions(0x40u | 0x20u); dialog.SetTitle(title);\n"
+            "      int hr = dialog.Show(GetForegroundWindow()); if (hr != 0) return string.Empty;\n"
+            "      IShellItem item; dialog.GetResult(out item); IntPtr ptr; item.GetDisplayName(0x80058000u, out ptr);\n"
+            "      try { return Marshal.PtrToStringUni(ptr); } finally { Marshal.FreeCoTaskMem(ptr); }\n"
+            "    }\n"
+            "  }\n"
+            "}\n"
+            "'@; "
+            "Add-Type -TypeDefinition $source; "
+            "[Console]::Out.Write([DownloadablePicker.NativePicker]::Show($env:DOWNLOADABLE_PICKER_TITLE))"
         )
-        shell32 = ctypes.windll.shell32
-        ole32 = ctypes.windll.ole32
-        shell32.SHBrowseForFolderW.argtypes = [ctypes.POINTER(BROWSEINFO)]
-        shell32.SHBrowseForFolderW.restype = ctypes.c_void_p
-        shell32.SHGetPathFromIDListW.argtypes = [ctypes.c_void_p, wintypes.LPWSTR]
-        shell32.SHGetPathFromIDListW.restype = wintypes.BOOL
-        ole32.CoInitializeEx.argtypes = [ctypes.c_void_p, wintypes.DWORD]
-        ole32.CoInitializeEx.restype = ctypes.c_long
-        ole32.CoTaskMemFree.argtypes = [ctypes.c_void_p]
-        ole32.CoTaskMemFree.restype = None
-        ole32.CoUninitialize.argtypes = []
-        ole32.CoUninitialize.restype = None
-        com_result = ole32.CoInitializeEx(None, 0x2)  # COINIT_APARTMENTTHREADED
-        com_initialized = com_result in (0, 1)  # S_OK or S_FALSE
-        if com_result < 0 and com_result != -2147417850:  # RPC_E_CHANGED_MODE is usable here.
-            raise OSError(f"Windows could not initialize the folder picker (0x{com_result & 0xFFFFFFFF:08X}).")
-        try:
-            pidl = shell32.SHBrowseForFolderW(ctypes.byref(info))
-            if not pidl:
-                raise ValueError("Folder selection canceled.")
-            path_buffer = ctypes.create_unicode_buffer(32768)
-            if not shell32.SHGetPathFromIDListW(pidl, path_buffer):
-                raise RuntimeError("Windows returned no folder path.")
-            return str(Path(path_buffer.value).resolve())
-        finally:
-            if 'pidl' in locals() and pidl:
-                ole32.CoTaskMemFree(pidl)
-            if com_initialized:
-                ole32.CoUninitialize()
+        environment = os.environ.copy()
+        environment["DOWNLOADABLE_PICKER_TITLE"] = f"Choose where {description} should be saved"
+        startupinfo = subprocess.STARTUPINFO()
+        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+        startupinfo.wShowWindow = subprocess.SW_HIDE
+        result = subprocess.run(
+            ["powershell.exe", "-NoProfile", "-STA", "-Command", picker_script],
+            capture_output=True,
+            text=True,
+            check=False,
+            env=environment,
+            startupinfo=startupinfo,
+        )
+        if result.returncode != 0:
+            raise RuntimeError(result.stderr.strip() or "Could not open the Windows folder picker.")
+        selected = result.stdout.strip()
+        if not selected:
+            raise ValueError("Folder selection canceled.")
+        return str(Path(selected).resolve())
     if sys.platform.startswith("linux"):
         if tk is not None and filedialog is not None and os.environ.get("DISPLAY"):
             root = tk.Tk()

@@ -12,3 +12,4 @@
 - Fixed setup's Chrome handoff: it now uses the Windows `chrome://extensions/` protocol handler so an already-open Chrome session navigates to the Extensions page instead of opening a blank New Tab.
 - Removed automatic Chrome navigation from setup and moved the README acknowledgement into the extension's first-run popup screen.
 - Organized platform launchers under `launchers/windows`, `launchers/macos`, and `launchers/linux`; kept root `Downloadable.cmd` as the normal Windows entry point and updated release packaging.
+- Replaced the Windows Python `ctypes` folder dialog with the modern Explorer-style Windows folder picker, including foreground ownership so it opens above Chrome.
