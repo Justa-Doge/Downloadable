@@ -2,7 +2,7 @@
 
 A Chrome extension for saving a YouTube or TikTok video as MP3 or MP4 to a folder you choose, or a TikTok `/photo/` post as PNG. It uses a small local helper because Chrome extensions cannot directly combine media streams or write to arbitrary folders.
 
-Version 1.5 is a Windows-focused update. Windows setup and helper behavior were tested; macOS, Linux, and ChromeOS were not tested for this release.
+Version 1.5.1 is a Windows-focused patch to the 1.5 release. Windows setup and helper behavior were tested; macOS, Linux, and ChromeOS were not tested for this release.
 
 Use this only with videos you own, public-domain material, or videos whose owner has authorized downloads. The platforms' official offline features are the appropriate option for other videos.
 

@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.5.1 - 2026-10-12
+
+- Fixed the local helper's job-status response failing when it tried to serialize its internal download process object. Download progress can now be read normally by the extension.
+- Windows-focused patch release. macOS, Linux, and ChromeOS remain untested.
+
 ## 1.5.0 - 2026-10-12
 
 - Windows-focused release: organized launchers, fixed setup permission failures, added first-run README acknowledgement in the extension, staged-update restart, repair setup, and TikTok carousel PNG handling.

@@ -27,6 +27,28 @@ class FolderPickerTests(unittest.TestCase):
 
 
 class SharedHelperTests(unittest.TestCase):
+    def test_job_status_omits_live_process_object(self):
+        job_id = "12345678-1234-1234-1234-123456789abc"
+        helper.JOBS[job_id] = {
+            "status": "downloading",
+            "progress": 42,
+            "message": "Downloading…",
+            "process": object(),
+        }
+        try:
+            handler = object.__new__(helper.Handler)
+            handler.path = f"/jobs/{job_id}"
+            handler.headers = {"X-Helper-Token": "test-token"}
+            handler.send_json = mock.Mock()
+            with mock.patch.object(helper, "TOKEN", "test-token"):
+                handler.do_GET()
+            handler.send_json.assert_called_once_with(
+                200,
+                {"status": "downloading", "progress": 42, "message": "Downloading…"},
+            )
+        finally:
+            del helper.JOBS[job_id]
+
     def test_download_process_stays_hidden_on_windows(self):
         job_id = "test-hidden-download"
         helper.JOBS[job_id] = {"status": "queued", "progress": 0, "message": "Queued…"}

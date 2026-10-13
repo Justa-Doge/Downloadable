@@ -666,7 +666,7 @@ class Handler(BaseHTTPRequestHandler):
         if match:
             with LOCK:
                 job = JOBS.get(match.group(1))
-                payload = dict(job) if job else None
+                payload = ({key: value for key, value in job.items() if key != "process"} if job else None)
             self.send_json(200, payload) if payload else self.send_json(404, {"error": "Job not found."})
             return
         self.send_json(404, {"error": "Not found."})
