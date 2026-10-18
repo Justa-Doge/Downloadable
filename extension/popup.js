@@ -418,13 +418,17 @@ function trackJob(jobId) {
   progressWrap.hidden = false;
   cancelButton.hidden = false;
   cancelButton.disabled = false;
+  let transientFailures = 0;
 
   const poll = async () => {
     try {
       const job = await helperRequest(`/jobs/${jobId}`);
+      transientFailures = 0;
       const percent = Math.max(0, Math.min(100, Number(job.progress) || 0));
       progressBar.style.width = `${percent}%`;
-      progressText.textContent = job.message || `${percent.toFixed(1)}%`;
+      const message = job.message || `${percent.toFixed(1)}%`;
+      progressText.textContent = message;
+      if (job.status !== "complete" && job.status !== "error") setStatus(message);
 
       if (job.status === "complete") {
         activeJobId = null;
@@ -442,8 +446,14 @@ function trackJob(jobId) {
       }
       pollTimer = setTimeout(poll, 700);
     } catch (error) {
-      setBusy(false);
-      setStatus(error.message, "error");
+      transientFailures += 1;
+      if (transientFailures >= 8) {
+        setBusy(false);
+        setStatus(`${error.message} Retrying is available from Settings.`, "error");
+        return;
+      }
+      setStatus(`Still working… (${error.message})`);
+      pollTimer = setTimeout(poll, Math.min(2500, 700 + transientFailures * 250));
     }
   };
   poll();

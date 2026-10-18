@@ -2,10 +2,19 @@
 
 ## Unreleased
 
+- Bumped the release to 1.5.2.
+- Made download polling resilient to brief helper/network hiccups instead of stopping after one missed status request.
+- Added a helper heartbeat so quiet yt-dlp extraction reports elapsed progress instead of appearing frozen on “Connecting to video site…”.
+
 - Broadened media-link validation so HTTPS links from yt-dlp-supported sites can be tried, while preserving TikTok photo/sound handling and adding clearer unsupported-site errors.
 - Added separate Windows, macOS, and combined Linux/ChromeOS experimental release packaging so each platform can be tested independently.
 - Updated the automatic updater to prefer the current platform's archive and only fall back to the legacy generic archive, preventing a Mac helper from staging a Windows build (or vice versa).
 - YouTube and TikTok titles are cleaned from the active tab and sent as a fallback filename; yt-dlp's own title-plus-ID filename remains authoritative whenever metadata is available.
+
+## 1.5.2 - 2026-10-18
+
+- Windows and macOS are now version 1.5.2; Linux and ChromeOS remain experimental and untested.
+- The popup keeps tracking active jobs through transient helper responses and displays live activity while yt-dlp is preparing media.
 
 ## 1.5.1 - 2026-10-18
 

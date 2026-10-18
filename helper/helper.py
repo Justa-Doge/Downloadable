@@ -399,7 +399,26 @@ def is_youtube_url(value: str) -> bool:
 
 def update_job(job_id: str, **changes: object) -> None:
     with LOCK:
-        JOBS[job_id].update(changes)
+        if job_id in JOBS:
+            changes.setdefault("updated_at", __import__("time").monotonic())
+            JOBS[job_id].update(changes)
+
+
+def start_job_heartbeat(job_id: str, process: subprocess.Popen[str]) -> None:
+    """Show that extraction is alive when yt-dlp emits no output for a while."""
+    def heartbeat() -> None:
+        import time
+        while process.poll() is None:
+            time.sleep(3)
+            with LOCK:
+                job = JOBS.get(job_id)
+                if not job or job.get("status") in {"complete", "error"}:
+                    return
+                quiet_for = time.monotonic() - float(job.get("updated_at", time.monotonic()))
+                started_at = float(job.get("started_at", time.monotonic()))
+            if quiet_for >= 5:
+                update_job(job_id, message=f"Still working… {int(time.monotonic() - started_at)}s elapsed")
+    threading.Thread(target=heartbeat, name=f"download-heartbeat-{job_id}", daemon=True).start()
 
 
 def _image_urls(value: object) -> list[str]:
@@ -564,7 +583,8 @@ def run_download(job_id: str, url: str, output_format: str, destination: Path, t
         command += ["--playlist-end", "1"]
     command.append(url)
 
-    update_job(job_id, status="downloading", message="Connecting to video site…")
+    import time
+    update_job(job_id, status="downloading", message="Connecting to video site…", started_at=time.monotonic())
     process = subprocess.Popen(
         command,
         stdout=subprocess.PIPE,
@@ -575,6 +595,7 @@ def run_download(job_id: str, url: str, output_format: str, destination: Path, t
         **({"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt" else {}),
     )
     update_job(job_id, process=process)
+    start_job_heartbeat(job_id, process)
     last_line = ""
     result_path: Path | None = None
     assert process.stdout is not None

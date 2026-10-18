@@ -2,7 +2,7 @@
 
 A Chrome extension for saving media from sites supported by yt-dlp as MP3 or MP4 to a folder you choose, or a TikTok `/photo/` post as PNG. It uses a small local helper because Chrome extensions cannot directly combine media streams or write to arbitrary folders.
 
-Version 1.5.1 is split into platform archives. Windows remains on 1.5.1, and the macOS 1.5.1 archive is now tested on an Apple-silicon VM. The combined Linux/ChromeOS archive is experimental and untested.
+Version 1.5.2 is split into platform archives. Windows and macOS are on 1.5.2, and the macOS build is tested on an Apple-silicon VM. The combined Linux/ChromeOS archive is experimental and untested.
 
 Use this only with videos you own, public-domain material, or videos whose owner has authorized downloads. The platforms' official offline features are the appropriate option for other videos.
 
