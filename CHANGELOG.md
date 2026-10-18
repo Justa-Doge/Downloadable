@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Release archives now use stable platform filenames without version numbers, so updates can be extracted into the same install folder and applied through the built-in update button. Version numbers remain in the extension manifest and release tag.
+
 - Bumped the release to 1.5.2.
 - Made download polling resilient to brief helper/network hiccups instead of stopping after one missed status request.
 - Added a helper heartbeat so quiet yt-dlp extraction reports elapsed progress instead of appearing frozen on “Connecting to video site…”.

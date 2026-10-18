@@ -118,6 +118,14 @@ class SharedHelperTests(unittest.TestCase):
         with mock.patch.object(helper, "runtime_platform", return_value="macos"):
             self.assertEqual(helper.select_release_asset(assets)["name"], "personal-media-downloader-macos-1.5.2.zip")
 
+    def test_release_asset_accepts_stable_platform_archive_name(self):
+        assets = [
+            {"name": "personal-media-downloader-macos.zip"},
+            {"name": "personal-media-downloader-windows.zip"},
+        ]
+        with mock.patch.object(helper, "runtime_platform", return_value="macos"):
+            self.assertEqual(helper.select_release_asset(assets)["name"], "personal-media-downloader-macos.zip")
+
     def test_supported_urls(self):
         self.assertTrue(helper.valid_media_url("https://www.youtube.com/watch?v=abc"))
         self.assertTrue(helper.valid_media_url("https://youtu.be/abc"))

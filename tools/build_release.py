@@ -85,9 +85,11 @@ def main() -> None:
     parser.add_argument("--platform", choices=("all", "windows", "macos", "linux", "linux-chromeos"), default="all")
     args = parser.parse_args()
     if args.output is None:
-        version = __import__("json").loads((ROOT / "extension" / "manifest.json").read_text(encoding="utf-8"))["version"]
+        # Keep the extracted install folder stable across updates. The
+        # manifest and GitHub release tag carry the version; the archive
+        # filename should not create a new `...-1.5.x` folder each time.
         suffix = "" if args.platform == "all" else f"-{args.platform}"
-        args.output = ROOT / f"personal-media-downloader{suffix}-{version}.zip"
+        args.output = ROOT / f"personal-media-downloader{suffix}.zip"
     build(args.output.resolve(), args.platform)
 
 

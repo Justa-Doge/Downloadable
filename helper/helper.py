@@ -90,12 +90,17 @@ def runtime_platform() -> str:
 def select_release_asset(assets: list[dict]) -> dict | None:
     """Prefer an archive built for this OS, with legacy generic fallback."""
     archives = [item for item in assets if str(item.get("name", "")).endswith(".zip")]
-    marker = f"-{runtime_platform()}-"
-    specific = [item for item in archives if marker in str(item.get("name", "")).lower()]
+    platform = runtime_platform()
+    # Release archives intentionally use a stable filename such as
+    # personal-media-downloader-macos.zip so extracting a new build does not
+    # create a version-numbered install folder. Keep accepting the older
+    # versioned form for existing releases.
+    marker = re.compile(rf"-{re.escape(platform)}(?:-|\.zip$)")
+    specific = [item for item in archives if marker.search(str(item.get("name", "")).lower())]
     if specific:
         return specific[0]
     return next(
-        (item for item in archives if re.fullmatch(r"personal-media-downloader-[0-9.]+\.zip", str(item.get("name", "")).lower())),
+        (item for item in archives if re.fullmatch(r"personal-media-downloader(?:-[0-9.]+)?\.zip", str(item.get("name", "")).lower())),
         None,
     )
 
