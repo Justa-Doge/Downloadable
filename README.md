@@ -58,7 +58,7 @@ TikTok `/photo/` posts show a PNG/s button. Photo carousels are saved as numbere
 
 ## Build a release ZIP
 
-Run `python3 tools/build_release.py --platform macos`, `--platform windows`, or `--platform linux-chromeos` from the project folder to build a platform-specific archive. The default archive names are stable (`personal-media-downloader-macos.zip`, `personal-media-downloader-windows.zip`, and `personal-media-downloader-linux-chromeos.zip`) so extracting an update reuses the same folder instead of creating a new version-numbered folder. The manifest and GitHub release tag carry the actual version. The builder excludes tokens, saved folders, virtual environments, generated extension configuration, caches, and temporary files. It preserves executable permissions for macOS `.command` and Linux `.sh` launchers. The Linux/ChromeOS archive is experimental.
+Run `python3 tools/build_release.py --platform macos`, `--platform windows`, or `--platform linux-chromeos` from the project folder to build a platform-specific archive. The default archive names are stable (`Downloadable-MacOS.zip`, `Downloadable-Windows.zip`, and `Downloadable-Linux-ChromeOS.zip`) so extracting an update reuses the same folder instead of creating a new version-numbered folder. The manifest and GitHub release tag carry the actual version. The builder excludes tokens, saved folders, virtual environments, generated extension configuration, caches, and temporary files. It preserves executable permissions for macOS `.command` and Linux `.sh` launchers. The Linux/ChromeOS archive is experimental.
 
 ## Troubleshooting
 

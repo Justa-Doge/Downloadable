@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Release archives now use stable platform filenames without version numbers, so updates can be extracted into the same install folder and applied through the built-in update button. Version numbers remain in the extension manifest and release tag.
+- Stable platform archives are now named `Downloadable-Windows.zip`, `Downloadable-MacOS.zip`, and `Downloadable-Linux-ChromeOS.zip`.
 
 - Bumped the release to 1.5.2.
 - Made download polling resilient to brief helper/network hiccups instead of stopping after one missed status request.

@@ -87,9 +87,15 @@ def main() -> None:
     if args.output is None:
         # Keep the extracted install folder stable across updates. The
         # manifest and GitHub release tag carry the version; the archive
-        # filename should not create a new `...-1.5.x` folder each time.
-        suffix = "" if args.platform == "all" else f"-{args.platform}"
-        args.output = ROOT / f"personal-media-downloader{suffix}.zip"
+        # filename should not create a new version-numbered folder each time.
+        names = {
+            "all": "Downloadable",
+            "windows": "Downloadable-Windows",
+            "macos": "Downloadable-MacOS",
+            "linux": "Downloadable-Linux",
+            "linux-chromeos": "Downloadable-Linux-ChromeOS",
+        }
+        args.output = ROOT / f"{names[args.platform]}.zip"
     build(args.output.resolve(), args.platform)
 
 
