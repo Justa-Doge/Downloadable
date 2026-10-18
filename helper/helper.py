@@ -53,7 +53,7 @@ def log_error(context: str, error: BaseException) -> None:
     try:
         with LOG_FILE.open("a", encoding="utf-8") as stream:
             stream.write(f"\n[{__import__('datetime').datetime.now().isoformat(timespec='seconds')}] {context}\n")
-            stream.write("".join(traceback.format_exception(error)))
+            stream.write("".join(traceback.format_exception(type(error), error, error.__traceback__)))
     except OSError:
         pass
 
@@ -79,6 +79,27 @@ def version_tuple(value: str) -> tuple[int, ...]:
     return tuple(int(part) for part in re.findall(r"\d+", value)[:3]) or (0,)
 
 
+def runtime_platform() -> str:
+    if os.name == "nt":
+        return "windows"
+    if sys.platform == "darwin":
+        return "macos"
+    return "linux-chromeos" if CHROMEOS_DOWNLOADS.is_dir() else "linux"
+
+
+def select_release_asset(assets: list[dict]) -> dict | None:
+    """Prefer an archive built for this OS, with legacy generic fallback."""
+    archives = [item for item in assets if str(item.get("name", "")).endswith(".zip")]
+    marker = f"-{runtime_platform()}-"
+    specific = [item for item in archives if marker in str(item.get("name", "")).lower()]
+    if specific:
+        return specific[0]
+    return next(
+        (item for item in archives if re.fullmatch(r"personal-media-downloader-[0-9.]+\.zip", str(item.get("name", "")).lower())),
+        None,
+    )
+
+
 def check_for_update() -> dict:
     """Check GitHub for a newer release and stage it for the next restart."""
     if not UPDATE_LOCK.acquire(blocking=False):
@@ -91,7 +112,7 @@ def check_for_update() -> dict:
         latest = str(release.get("tag_name", "")).lstrip("v")
         if version_tuple(latest) <= version_tuple(current):
             return {"status": "current", "current": current, "latest": latest}
-        asset = next((item for item in release.get("assets", []) if str(item.get("name", "")).endswith(".zip")), None)
+        asset = select_release_asset(release.get("assets", []))
         if not asset:
             return {"status": "unavailable", "current": current, "latest": latest}
         update_path = ROOT / ".downloadable-update.zip"
@@ -162,20 +183,29 @@ def schedule_helper_restart() -> None:
     if not RESTART_LOCK.acquire(blocking=False):
         return
     try:
-        if os.name != "nt":
-            raise RuntimeError("Automatic helper restart is currently supported on Windows only.")
-        command = (
-            "Start-Sleep -Milliseconds 650; "
-            "schtasks /End /TN 'Downloadable Helper' 2>$null; "
-            "Start-Sleep -Milliseconds 700; "
-            "schtasks /Run /TN 'Downloadable Helper' 2>$null"
-        )
-        flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) | getattr(subprocess, "DETACHED_PROCESS", 0)
-        subprocess.Popen(
-            ["powershell.exe", "-NoProfile", "-WindowStyle", "Hidden", "-Command", command],
-            creationflags=flags,
-            close_fds=True,
-        )
+        if os.name == "nt":
+            command = (
+                "Start-Sleep -Milliseconds 650; "
+                "schtasks /End /TN 'Downloadable Helper' 2>$null; "
+                "Start-Sleep -Milliseconds 700; "
+                "schtasks /Run /TN 'Downloadable Helper' 2>$null"
+            )
+            flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) | getattr(subprocess, "DETACHED_PROCESS", 0)
+            subprocess.Popen(
+                ["powershell.exe", "-NoProfile", "-WindowStyle", "Hidden", "-Command", command],
+                creationflags=flags,
+                close_fds=True,
+            )
+        elif sys.platform == "darwin":
+            # launchd keeps the helper alive and restarts it after this process exits.
+            subprocess.Popen(
+                ["launchctl", "kickstart", "-k", f"gui/{os.getuid()}/com.downloadable.helper"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                close_fds=True,
+            )
+        else:
+            raise RuntimeError("Automatic helper restart is not configured for this platform.")
         threading.Timer(0.35, os._exit, args=(0,)).start()
     finally:
         RESTART_LOCK.release()
@@ -321,7 +351,9 @@ def valid_media_url(value: str) -> bool:
         or (host in {"vm.tiktok.com", "vt.tiktok.com"} and len(parsed.path) > 1)
         or (host in {"tiktok.com", "www.tiktok.com"} and parsed.path.startswith(("/t/", "/v/")) and len(parsed.path) > 3)
     )
-    return parsed.scheme == "https" and (youtube_media or youtube_short_link or tiktok_media)
+    # yt-dlp supports many more sites than the two with special UI behavior
+    # above. Let it validate other normal HTTPS media links at download time.
+    return parsed.scheme == "https" and bool(host) and host not in {"localhost", "127.0.0.1", "::1"}
 
 
 def resolve_tiktok_short_url(value: str) -> str:
@@ -480,13 +512,22 @@ def run_photo_download(job_id: str, url: str, destination: Path) -> None:
     update_job(job_id, status="complete", progress=100, message=f"Saved {total} photo{'s' if total != 1 else ''}.", filename=outputs[0] if total == 1 else f"{total} PNG files")
 
 
-def run_download(job_id: str, url: str, output_format: str, destination: Path) -> None:
+def fallback_filename(title: str, output_format: str) -> str:
+    """Use a browser-supplied title only when yt-dlp did not report a path."""
+    cleaned = re.sub(r"[^A-Za-z0-9._ -]+", "", str(title or "")).strip()
+    cleaned = cleaned[:180].strip(" .")
+    return cleaned or f"{output_format.upper()} download"
+
+
+def run_download(job_id: str, url: str, output_format: str, destination: Path, title: str = "") -> None:
     if output_format == "png":
         run_photo_download(job_id, url, destination)
         return
     output_template = str(destination / "%(title).180B [%(id)s].%(ext)s")
     command = [
-        str(ROOT / ".venv" / ("Scripts" if os.name == "nt" else "bin") / ("yt-dlp.exe" if os.name == "nt" else "yt-dlp")),
+        sys.executable,
+        "-m",
+        "yt_dlp",
         "--newline",
         "--no-playlist",
         "--no-overwrites",
@@ -577,7 +618,13 @@ def run_download(job_id: str, url: str, output_format: str, destination: Path) -
                 "the sound and choose MP3 instead."
             )
         else:
-            error = last_line or "yt-dlp failed."
+            detail = last_line or "yt-dlp failed."
+            error = (
+                "yt-dlp could not recognize that link. The site may not be supported, "
+                "or the media may require sign-in."
+                if "unsupported url" in detail.lower() or "no suitable" in detail.lower()
+                else detail
+            )
         update_job(job_id, status="error", error=error)
         return
 
@@ -586,13 +633,13 @@ def run_download(job_id: str, url: str, output_format: str, destination: Path) -
         status="complete",
         progress=100,
         message="Download complete.",
-        filename=result_path.name if result_path else f"{output_format.upper()} download",
+        filename=result_path.name if result_path else fallback_filename(title, output_format),
     )
 
 
-def download_worker(job_id: str, url: str, output_format: str, destination: Path) -> None:
+def download_worker(job_id: str, url: str, output_format: str, destination: Path, title: str = "") -> None:
     try:
-        run_download(job_id, url, output_format, destination)
+        run_download(job_id, url, output_format, destination, title)
     except Exception as error:
         log_error(f"Download failed for {url}", error)
         update_job(job_id, status="error", error=f"Helper failed: {error}")
@@ -689,10 +736,11 @@ class Handler(BaseHTTPRequestHandler):
             if self.path == "/download":
                 url = str(body.get("url", ""))
                 output_format = str(body.get("format", ""))
+                title = str(body.get("title", "")).strip()[:180]
                 destination = Path(str(body.get("destination", ""))).expanduser().resolve()
                 download_url = resolve_tiktok_short_url(url)
                 if not valid_media_url(download_url):
-                    raise ValueError("That is not a supported YouTube or TikTok video URL.")
+                    raise ValueError("Paste a valid HTTPS media link.")
                 if output_format not in {"mp3", "mp4", "png"}:
                     raise ValueError("Format must be MP3, MP4, or PNG.")
                 if output_format == "png" and not is_tiktok_photo_url(download_url):
@@ -711,7 +759,7 @@ class Handler(BaseHTTPRequestHandler):
                 save_state(state)
                 threading.Thread(
                     target=download_worker,
-                    args=(job_id, download_url, output_format, destination),
+                    args=(job_id, download_url, output_format, destination, title),
                     daemon=True,
                 ).start()
                 self.send_json(202, {"job_id": job_id})
@@ -768,8 +816,9 @@ def main() -> None:
     if not TOKEN:
         print("Missing helper token. Run the platform setup launcher first.", file=sys.stderr)
         raise SystemExit(1)
-    yt_dlp = ROOT / ".venv" / ("Scripts" if os.name == "nt" else "bin") / ("yt-dlp.exe" if os.name == "nt" else "yt-dlp")
-    if not yt_dlp.exists():
+    try:
+        import yt_dlp  # noqa: F401
+    except ImportError:
         print("yt-dlp is not installed. Run the platform setup launcher first.", file=sys.stderr)
         raise SystemExit(1)
     if not shutil.which("ffmpeg"):

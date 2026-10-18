@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build a clean cross-platform Downloadable release archive."""
+"""Build clean platform-specific Downloadable release archives."""
 
 from __future__ import annotations
 
@@ -17,7 +17,6 @@ FIXED_FILES = [
     "com.downloadable.helper.plist",
     "Downloadable.cmd",
     "launchers/macos/setup.command",
-    "launchers/macos/start.command",
     "launchers/windows/setup.ps1",
     "launchers/windows/start.ps1",
     "launchers/windows/setup.cmd",
@@ -27,9 +26,36 @@ FIXED_FILES = [
     "helper/helper.py",
 ]
 
+PLATFORM_FILES = {
+    "windows": {
+        "Downloadable.cmd",
+        "launchers/windows/setup.ps1",
+        "launchers/windows/start.ps1",
+        "launchers/windows/setup.cmd",
+        "launchers/windows/start.cmd",
+    },
+    "macos": {
+        "com.downloadable.helper.plist",
+        "launchers/macos/setup.command",
+    },
+    "linux": {
+        "launchers/linux/setup.sh",
+        "launchers/linux/start.sh",
+    },
+    "linux-chromeos": {
+        "launchers/linux/setup.sh",
+        "launchers/linux/start.sh",
+    },
+}
 
-def package_files() -> list[Path]:
-    files = [ROOT / name for name in FIXED_FILES]
+
+def package_files(platform: str = "all") -> list[Path]:
+    allowed = PLATFORM_FILES.get(platform)
+    files = [
+        ROOT / name
+        for name in FIXED_FILES
+        if allowed is None or name not in PLATFORM_FILES["windows"] | PLATFORM_FILES["macos"] | PLATFORM_FILES["linux"] or name in allowed
+    ]
     files.extend(path for path in (ROOT / "extension").rglob("*") if path.is_file())
     return sorted(
         (path for path in files if path.name != "config.js" and not path.name.startswith(".!") and path.name != ".DS_Store"),
@@ -37,10 +63,10 @@ def package_files() -> list[Path]:
     )
 
 
-def build(output: Path) -> None:
+def build(output: Path, platform: str = "all") -> None:
     output.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
-        for path in package_files():
+        for path in package_files(platform):
             relative = path.relative_to(ROOT).as_posix()
             info = zipfile.ZipInfo.from_file(path, relative)
             info.create_system = 3
@@ -55,9 +81,14 @@ def build(output: Path) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("output", nargs="?", type=Path, default=ROOT / "personal-media-downloader-1.0.zip")
+    parser.add_argument("output", nargs="?", type=Path)
+    parser.add_argument("--platform", choices=("all", "windows", "macos", "linux", "linux-chromeos"), default="all")
     args = parser.parse_args()
-    build(args.output.resolve())
+    if args.output is None:
+        version = __import__("json").loads((ROOT / "extension" / "manifest.json").read_text(encoding="utf-8"))["version"]
+        suffix = "" if args.platform == "all" else f"-{args.platform}"
+        args.output = ROOT / f"personal-media-downloader{suffix}-{version}.zip"
+    build(args.output.resolve(), args.platform)
 
 
 if __name__ == "__main__":

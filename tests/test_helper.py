@@ -25,8 +25,28 @@ class FolderPickerTests(unittest.TestCase):
         self.assertEqual(startupinfo.wShowWindow, helper.subprocess.SW_HIDE)
         self.assertIn("IFileOpenDialog", command[-1])
 
+    def test_macos_picker_uses_finder_choose_folder(self):
+        completed = type("Completed", (), {"returncode": 0, "stdout": "/Users/test/Music/\n", "stderr": ""})()
+        with mock.patch.object(helper.os, "name", "posix"), mock.patch.object(helper.sys, "platform", "darwin"), mock.patch.object(helper.subprocess, "run", return_value=completed) as run, mock.patch.object(helper, "Path") as path_class:
+            path_class.return_value.resolve.return_value = "/Users/test/Music"
+            self.assertEqual(helper.choose_folder("mp3"), "/Users/test/Music")
+        command = run.call_args.args[0]
+        self.assertEqual(command[0], "osascript")
+        self.assertIn("tell application \"Finder\"", command[-1])
+        self.assertIn("choose folder", command[-1])
+
+    def test_macos_picker_cancel_is_reported(self):
+        completed = type("Completed", (), {"returncode": 1, "stdout": "", "stderr": "User canceled."})()
+        with mock.patch.object(helper.os, "name", "posix"), mock.patch.object(helper.sys, "platform", "darwin"), mock.patch.object(helper.subprocess, "run", return_value=completed):
+            with self.assertRaisesRegex(ValueError, "canceled"):
+                helper.choose_folder("mp4")
+
 
 class SharedHelperTests(unittest.TestCase):
+    def test_fallback_filename_uses_title_or_existing_default(self):
+        self.assertEqual(helper.fallback_filename("A video: title", "mp4"), "A video title")
+        self.assertEqual(helper.fallback_filename("", "mp3"), "MP3 download")
+
     def test_job_status_omits_live_process_object(self):
         job_id = "12345678-1234-1234-1234-123456789abc"
         helper.JOBS[job_id] = {
@@ -53,11 +73,14 @@ class SharedHelperTests(unittest.TestCase):
         job_id = "test-hidden-download"
         helper.JOBS[job_id] = {"status": "queued", "progress": 0, "message": "Queued…"}
         try:
-            with tempfile.TemporaryDirectory() as directory:
-                with mock.patch.object(helper.subprocess, "Popen") as popen:
-                    popen.return_value.stdout = io.StringIO("")
-                    popen.return_value.wait.return_value = 0
-                    helper.run_download(job_id, "https://www.youtube.com/watch?v=test", "mp4", Path(directory))
+            # run_download only builds the output template before Popen. Use
+            # the project directory so Windows' sandbox temp cleanup cannot
+            # mask the assertion with an unrelated PermissionError.
+            directory = Path(__file__).resolve().parents[1]
+            with mock.patch.object(helper.subprocess, "Popen") as popen:
+                popen.return_value.stdout = io.StringIO("")
+                popen.return_value.wait.return_value = 0
+                helper.run_download(job_id, "https://www.youtube.com/watch?v=test", "mp4", directory)
             if helper.os.name == "nt":
                 self.assertEqual(popen.call_args.kwargs["creationflags"], helper.subprocess.CREATE_NO_WINDOW)
             else:
@@ -86,6 +109,15 @@ class SharedHelperTests(unittest.TestCase):
         self.assertTrue(manifest.is_file())
         self.assertIn("version", json.loads(manifest.read_text(encoding="utf-8")))
 
+    def test_release_asset_prefers_current_platform_archive(self):
+        assets = [
+            {"name": "personal-media-downloader-1.5.1.zip"},
+            {"name": "personal-media-downloader-macos-1.5.2.zip"},
+            {"name": "personal-media-downloader-windows-1.5.2.zip"},
+        ]
+        with mock.patch.object(helper, "runtime_platform", return_value="macos"):
+            self.assertEqual(helper.select_release_asset(assets)["name"], "personal-media-downloader-macos-1.5.2.zip")
+
     def test_supported_urls(self):
         self.assertTrue(helper.valid_media_url("https://www.youtube.com/watch?v=abc"))
         self.assertTrue(helper.valid_media_url("https://youtu.be/abc"))
@@ -94,7 +126,10 @@ class SharedHelperTests(unittest.TestCase):
         self.assertTrue(helper.valid_media_url("https://www.tiktok.com/t/ZTRC5xgJp"))
         self.assertTrue(helper.valid_media_url("https://www.tiktok.com/v/123"))
         self.assertTrue(helper.valid_media_url("https://vm.tiktok.com/ZMabc123/"))
-        self.assertFalse(helper.valid_media_url("https://example.com/video/123"))
+        self.assertTrue(helper.valid_media_url("https://vimeo.com/123456"))
+        self.assertTrue(helper.valid_media_url("https://example.org/media/item"))
+        self.assertFalse(helper.valid_media_url("http://example.com/video/123"))
+        self.assertFalse(helper.valid_media_url("https://localhost/video/123"))
 
     def test_tiktok_photo_url_is_detected(self):
         self.assertTrue(helper.is_tiktok_photo_url("https://www.tiktok.com/@user/photo/123"))

@@ -1,19 +1,19 @@
 # Personal Video & Audio Downloader
 
-A Chrome extension for saving a YouTube or TikTok video as MP3 or MP4 to a folder you choose, or a TikTok `/photo/` post as PNG. It uses a small local helper because Chrome extensions cannot directly combine media streams or write to arbitrary folders.
+A Chrome extension for saving media from sites supported by yt-dlp as MP3 or MP4 to a folder you choose, or a TikTok `/photo/` post as PNG. It uses a small local helper because Chrome extensions cannot directly combine media streams or write to arbitrary folders.
 
-Version 1.5.1 is a Windows-focused patch to the 1.5 release. Windows setup and helper behavior were tested; macOS, Linux, and ChromeOS were not tested for this release.
+Version 1.5.1 is split into platform archives. Windows remains on 1.5.1, and the macOS 1.5.1 archive is now tested on an Apple-silicon VM. The combined Linux/ChromeOS archive is experimental and untested.
 
 Use this only with videos you own, public-domain material, or videos whose owner has authorized downloads. The platforms' official offline features are the appropriate option for other videos.
 
 ## Install on macOS
 
-1. Double-click `launchers/macos/setup.command`. If macOS blocks it, Control-click it, choose **Open**, then confirm.
+1. Double-click `launchers/macos/setup.command`. This is the only Mac launcher: it installs and starts the background helper. If macOS blocks it, Control-click it, choose **Open**, then confirm.
 2. In Chrome, open `chrome://extensions`.
 3. Turn on **Developer mode** in the upper-right corner.
 4. Click **Load unpacked** and select the `extension` folder inside this project.
-5. The setup installs the helper as a macOS background service, so no Terminal window needs to stay open.
-6. Open a YouTube or TikTok video, or paste its link into the popup. Choose a folder, then click **MP3** or **MP4**. TikTok `/music/` sound-page links are accepted for MP3 and limited to the first available sound result.
+5. The setup installs the helper and its virtual environment under `~/Library/Application Support/Downloadable`, so it works even when the project is inside the protected Downloads folder. No Terminal window needs to stay open.
+6. Open a supported media page, or paste its link into the popup. Choose a folder, then click **MP3** or **MP4**. TikTok `/music/` sound-page links are accepted for MP3 and limited to the first available sound result.
 
 For CapCut, choose the folder where you keep edit audio, download as **MP3**, then import that file into CapCut Desktop. MP4 saves the complete video and audio together.
 
@@ -54,18 +54,18 @@ TikTok `/photo/` posts show a PNG/s button. Photo carousels are saved as numbere
 - Windows 10/11, macOS, Linux, or ChromeOS with the Linux development environment
 - Google Chrome or another Chromium browser
 - Internet access during initial setup
-- `ffmpeg` available on the command line (already present on the Mac this was built for); setup installs the Python-side TikTok impersonation dependency automatically
+- `ffmpeg` and Python 3 available on the command line; macOS setup can offer to install missing copies through Homebrew, and installs the Python-side TikTok impersonation dependency automatically
 
 ## Build a release ZIP
 
-Run `python3 tools/build_release.py` from the project folder. The builder excludes tokens, saved folders, virtual environments, generated extension configuration, caches, and temporary files. It also preserves executable permissions for the macOS `.command` launchers while including the Windows `.cmd` launchers.
+Run `python3 tools/build_release.py --platform macos`, `--platform windows`, or `--platform linux-chromeos` from the project folder to build a platform-specific archive. The builder excludes tokens, saved folders, virtual environments, generated extension configuration, caches, and temporary files. It preserves executable permissions for macOS `.command` and Linux `.sh` launchers. The Linux/ChromeOS archive is experimental.
 
 ## Troubleshooting
 
-- **Local helper is not running:** on macOS, double-click `launchers/macos/start.command`; on Windows, run `Downloadable.cmd` again to repair the background task, or use the popup's **Settings → Repair setup** / **Reconnect** buttons. Setup stops Downloadable's own helper before refreshing its Python environment. Linux users can run `launchers/linux/start.sh` for visible troubleshooting output.
+- **Local helper is not running:** on macOS, rerun `launchers/macos/setup.command`. On Windows, run `Downloadable.cmd` again to repair the background task, or use the popup's **Settings → Repair setup** / **Reconnect** buttons. Linux users can run `launchers/linux/start.sh` for visible troubleshooting output.
 - **Authentication failed:** rerun the setup launcher for your platform, then click Reload on the extension's card at `chrome://extensions`.
 - **Video requires sign-in:** this first version intentionally does not read browser cookies. Use YouTube's official download feature for restricted videos.
-- **YouTube or TikTok changed something:** rerun the setup launcher for your platform to update `yt-dlp`, then reload the extension.
+- **A site is not recognized:** Downloadable passes normal HTTPS links to yt-dlp, which supports a large and changing list of sites. Rerun the setup launcher for your platform to update `yt-dlp`, then try the direct media page URL. A site can still fail when that specific page or media type is unsupported or requires sign-in.
 - **Download failed after a site or Chrome update:** copy the final error shown in the extension or Terminal window when asking for help.
 
 ## Privacy and security

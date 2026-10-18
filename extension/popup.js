@@ -31,6 +31,7 @@ const readmeConfirm = document.querySelector("#readme-confirm");
 const continueButton = document.querySelector("#continue-button");
 
 let currentUrl = "";
+let currentTitle = "";
 const destinations = { mp3: "", mp4: "", png: "" };
 let pollTimer = null;
 let helperConnected = false;
@@ -132,7 +133,7 @@ async function connectHelper(showMessage = true) {
   }
 }
 
-function mediaType(url) {
+function mediaType(url, allowGeneric = true) {
   try {
     const parsed = new URL(url);
     const hostname = parsed.hostname.toLowerCase();
@@ -155,10 +156,30 @@ function mediaType(url) {
     if (tiktokSound) return "sound";
     if (tiktokPhoto) return "photo";
     if (youtubeVideo || youtubeShortLink || tiktokMedia) return "video";
+    if (allowGeneric && parsed.protocol === "https:" && parsed.hostname) return "video";
     return "";
   } catch {
     return "";
   }
+}
+
+function tabVideoTitle(tab) {
+  const rawTitle = String(tab?.title || "").trim();
+  if (!rawTitle) return "";
+  let hostname = "";
+  try {
+    hostname = new URL(tab?.url || "").hostname.toLowerCase();
+  } catch {
+    // Keep the browser title as the best available fallback.
+  }
+  let title = rawTitle;
+  if (hostname === "youtube.com" || hostname.endsWith(".youtube.com")) {
+    title = title.replace(/\s+-\s+YouTube(?:\s+Music)?\s*$/i, "").trim();
+  } else if (hostname === "tiktok.com" || hostname.endsWith(".tiktok.com")) {
+    title = title.replace(/\s+(?:\||-|–)\s*TikTok\s*$/i, "").trim();
+    if (/^TikTok(?:\s*-\s*Make Your Day)?$/i.test(title)) title = "";
+  }
+  return title;
 }
 
 function useUrl(value, announce = true) {
@@ -175,14 +196,18 @@ function useUrl(value, announce = true) {
   } else if (type === "video" || type === "photo") {
     setStatus("Link ready.", "success");
   } else {
-    setStatus("Paste a YouTube or TikTok video or sound link.", "error");
+    setStatus("Paste a supported HTTPS media link.", "error");
   }
 }
 
 async function initialize() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  titleElement.textContent = tab?.title?.replace(/ - YouTube$/, "") || "Current video";
+  currentTitle = tabVideoTitle(tab) || "Current video";
+  titleElement.textContent = currentTitle;
   const tabUrl = tab?.url || "";
+  // yt-dlp supports far more than the two sites with special UI behavior.
+  // Treat any normal HTTPS tab as a candidate and let yt-dlp be the final
+  // authority when the download starts.
   if (mediaType(tabUrl)) {
     urlInput.value = tabUrl;
     useUrl(tabUrl, false);
@@ -197,7 +222,7 @@ async function initialize() {
     }
     setStatus(isTikTokFeed
       ? "TikTok feed: open the video's comments, then reopen this popup—or paste its Share link."
-      : "Paste a YouTube or TikTok link below.");
+      : "Paste a yt-dlp-supported HTTPS media link below.");
   }
 
   const cached = await chrome.storage.local.get(["mp3Destination", "mp4Destination", "pngDestination"]);
@@ -359,7 +384,7 @@ downloadButtons.forEach((button) => {
   button.addEventListener("click", async () => {
     const format = button.dataset.format;
     if (!currentUrl) {
-      setStatus("Paste a supported link first.", "error");
+      setStatus("Paste a supported HTTPS media link first.", "error");
       return;
     }
     if (mediaType(currentUrl) === "sound") {
@@ -376,7 +401,7 @@ downloadButtons.forEach((button) => {
     try {
       const result = await helperRequest("/download", {
         method: "POST",
-        body: JSON.stringify({ url: currentUrl, format, destination: destinations[format] })
+        body: JSON.stringify({ url: currentUrl, format, destination: destinations[format], title: currentTitle })
       });
       trackJob(result.job_id);
     } catch (error) {

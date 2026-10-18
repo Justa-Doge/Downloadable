@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Personal Video & Audio Downloader",
   "version": "1.5.1",
-  "description": "Save permitted YouTube or TikTok media as MP3 or MP4 through a local helper on Windows, macOS, Linux, and ChromeOS.",
+  "description": "Save permitted media from sites supported by yt-dlp as MP3 or MP4 through a local helper on Windows, macOS, Linux, and ChromeOS.",
   "permissions": ["activeTab", "tabs", "storage"],
   "host_permissions": [
     "http://127.0.0.1:47821/*",

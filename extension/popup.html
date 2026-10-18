@@ -39,9 +39,9 @@
         <p class="settings-note">The helper stays on this computer and only accepts this extension's local token.</p>
       </section>
 
-      <label class="url-label" for="media-url">YouTube or TikTok link</label>
+      <label class="url-label" for="media-url">Media link</label>
       <input id="media-url" class="url-input" type="url" inputmode="url"
-        placeholder="Paste a video, Short, TikTok, or TikTok sound link">
+        placeholder="Paste a yt-dlp-supported media link">
 
       <section class="destination">
         <div class="folder-setting">
@@ -83,7 +83,7 @@
       </div>
 
       <p id="status" class="status" role="status"></p>
-      <p class="legal">Supports YouTube videos and TikTok videos and photos. To save a TikTok sound, open a video using that sound and choose MP3. Only download media you have permission to save.</p>
+      <p class="legal">Supports the sites recognized by yt-dlp, including YouTube and TikTok. Some sites may require sign-in or have media-specific limits. TikTok sounds require opening a video that uses the sound. Only download media you have permission to save.</p>
     </main>
     <script src="config.js"></script>
     <script src="popup.js"></script>

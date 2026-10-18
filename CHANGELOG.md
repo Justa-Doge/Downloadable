@@ -1,9 +1,18 @@
 # Changelog
 
-## 1.5.1 - 2026-10-12
+## Unreleased
 
+- Broadened media-link validation so HTTPS links from yt-dlp-supported sites can be tried, while preserving TikTok photo/sound handling and adding clearer unsupported-site errors.
+- Added separate Windows, macOS, and combined Linux/ChromeOS experimental release packaging so each platform can be tested independently.
+- Updated the automatic updater to prefer the current platform's archive and only fall back to the legacy generic archive, preventing a Mac helper from staging a Windows build (or vice versa).
+- YouTube and TikTok titles are cleaned from the active tab and sent as a fallback filename; yt-dlp's own title-plus-ID filename remains authoritative whenever metadata is available.
+
+## 1.5.1 - 2026-10-18
+
+- Windows remains on the 1.5.1 patch release; its setup/helper behavior is unchanged.
+- macOS 1.5.1 is now tested on an Apple-silicon VM, including Homebrew Python/FFmpeg setup, background helper startup, Chrome extension authentication, and a real MP4 download.
+- Linux and ChromeOS remain experimental and untested.
 - Fixed the local helper's job-status response failing when it tried to serialize its internal download process object. Download progress can now be read normally by the extension.
-- Windows-focused patch release. macOS, Linux, and ChromeOS remain untested.
 
 ## 1.5.0 - 2026-10-12
 
@@ -18,3 +27,12 @@
 - Removed automatic Chrome navigation from setup and moved the README acknowledgement into the extension's first-run popup screen.
 - Organized platform launchers under `launchers/windows`, `launchers/macos`, and `launchers/linux`; kept root `Downloadable.cmd` as the normal Windows entry point and updated release packaging.
 - Replaced the Windows Python `ctypes` folder dialog with the modern Explorer-style Windows folder picker, including foreground ownership so it opens above Chrome.
+### macOS 1.5.1 validation details
+
+- Fixed the macOS launch agent to use a per-user Application Support runtime copy, avoiding macOS privacy restrictions when the project is stored in Downloads.
+- Made macOS `start.command` background-safe: it now kickstarts the LaunchAgent instead of attaching the helper to the Terminal, and runs setup automatically when needed.
+- Simplified the Mac release to one launcher: `setup.command` installs and starts the background helper; `start.command` is no longer packaged.
+- Fixed the macOS runtime copy to include the extension manifest required by the helper's state endpoint.
+- Moved the macOS virtual environment itself into Application Support so setup does not try to write `.venv` inside protected Downloads.
+- Fixed the final macOS setup token-generation path that still referenced the old Downloads virtual environment.
+- Made downloads invoke yt-dlp through the active Python environment and fixed error logging on macOS Python 3.9.
