@@ -2,7 +2,7 @@
 
 A Chrome extension for saving media from sites supported by yt-dlp as MP3 or MP4 to a folder you choose, or a TikTok `/photo/` post as PNG. It uses a small local helper because Chrome extensions cannot directly combine media streams or write to arbitrary folders.
 
-Version 1.5.2 is split into platform archives. Windows and macOS are on 1.5.2, and the macOS build is tested on an Apple-silicon VM. The combined Linux/ChromeOS archive is experimental and untested.
+Version 1.5.2 is split into platform archives. Windows, macOS, and Linux are confirmed working; ChromeOS remains experimental and untested. The macOS build was tested on an Apple-silicon VM.
 
 Use this only with videos you own, public-domain material, or videos whose owner has authorized downloads. The platforms' official offline features are the appropriate option for other videos.
 
@@ -41,6 +41,8 @@ TikTok `/photo/` posts show a PNG/s button. Photo carousels are saved as numbere
 2. Run `./launchers/linux/setup.sh` from this folder. It creates the local environment, token, extension configuration, and user service when systemd user services are available.
 3. In Chrome, open `chrome://extensions`, enable **Developer mode**, and choose **Load unpacked** for this project's `extension` folder.
 4. If your desktop does not provide a user service manager, setup starts the helper for the current session; use `./launchers/linux/start.sh` after reboot.
+
+The Linux build was verified with Chromium, the helper user service, and a real MP4 download.
 
 ## Install on ChromeOS
 

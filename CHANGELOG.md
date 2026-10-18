@@ -6,6 +6,7 @@
 - Stable platform archives are now named `Downloadable-Windows.zip`, `Downloadable-MacOS.zip`, and `Downloadable-Linux-ChromeOS.zip`.
 
 - Bumped the release to 1.5.2.
+- Confirmed the 1.5.2 build on Windows, macOS, and Linux with real helper/extension download tests. ChromeOS remains experimental and untested.
 - Made download polling resilient to brief helper/network hiccups instead of stopping after one missed status request.
 - Added a helper heartbeat so quiet yt-dlp extraction reports elapsed progress instead of appearing frozen on “Connecting to video site…”.
 
@@ -16,7 +17,7 @@
 
 ## 1.5.2 - 2026-10-18
 
-- Windows and macOS are now version 1.5.2; Linux and ChromeOS remain experimental and untested.
+- Windows, macOS, and Linux are confirmed working on 1.5.2; ChromeOS remains experimental and untested.
 - The popup keeps tracking active jobs through transient helper responses and displays live activity while yt-dlp is preparing media.
 
 ## 1.5.1 - 2026-10-18
