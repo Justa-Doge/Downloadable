@@ -12,7 +12,7 @@ $taskName = "Downloadable Helper"
 try { Stop-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue } catch { }
 Start-Sleep -Milliseconds 700
 if ($env:OS -eq "Windows_NT") {
-  $helperPattern = [regex]::Escape((Join-Path $projectRoot "helper\helper.py"))
+  $helperPattern = '(?i)(?:Downloadable|personal-media-downloader).*helper[\\/]helper\.py'
   Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
     Where-Object { $_.CommandLine -and $_.CommandLine -match $helperPattern -and $_.ProcessId -ne $PID } |
     ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }

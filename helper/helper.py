@@ -59,8 +59,12 @@ def log_error(context: str, error: BaseException) -> None:
 
 
 def open_log_folder() -> None:
+    # The helper can stay alive across temp-folder cleanup, so recreate the
+    # directory immediately before opening it.  Explorer is more reliable
+    # than os.startfile for opening a directory from a packaged helper.
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
     if os.name == "nt":
-        os.startfile(LOG_DIR)  # type: ignore[attr-defined]
+        subprocess.Popen(["explorer.exe", str(LOG_DIR)], close_fds=True)
     elif sys.platform == "darwin":
         subprocess.Popen(["open", str(LOG_DIR)])
     else:

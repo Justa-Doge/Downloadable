@@ -71,6 +71,16 @@ fi
 
 launchctl bootout "gui/$(id -u)/com.downloadable.helper" 2>/dev/null || true
 
+# Stop helpers from older installs too. This is intentionally scoped to
+# Downloadable helper command lines so unrelated Python processes are left
+# alone before the runtime directory is replaced.
+OLD_HELPERS=($(ps -axo pid=,command= | awk -v self="$$" '$1 != self && /helper\/helper\.py/ && /[Dd]ownloadable|personal-media-downloader/ {print $1}'))
+if (( ${#OLD_HELPERS} )); then
+  kill -TERM $OLD_HELPERS 2>/dev/null || true
+  sleep 1
+  kill -KILL $OLD_HELPERS 2>/dev/null || true
+fi
+
 # Recreate a damaged runtime venv instead of reusing a partial one. This is
 # especially important after a venv was created from a protected Downloads
 # location or after Python was upgraded in place.

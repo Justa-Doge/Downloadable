@@ -43,6 +43,13 @@ class FolderPickerTests(unittest.TestCase):
 
 
 class SharedHelperTests(unittest.TestCase):
+    @unittest.skipUnless(helper.os.name == "nt", "Windows log-folder test")
+    def test_open_log_folder_recreates_directory_and_uses_explorer(self):
+        with mock.patch("pathlib.Path.mkdir") as mkdir, mock.patch.object(helper.subprocess, "Popen") as popen:
+            helper.open_log_folder()
+        mkdir.assert_called_once_with(parents=True, exist_ok=True)
+        popen.assert_called_once_with(["explorer.exe", str(helper.LOG_DIR)], close_fds=True)
+
     def test_fallback_filename_uses_title_or_existing_default(self):
         self.assertEqual(helper.fallback_filename("A video: title", "mp4"), "A video title")
         self.assertEqual(helper.fallback_filename("", "mp3"), "MP3 download")
