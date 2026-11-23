@@ -1,12 +1,11 @@
 {
   "manifest_version": 3,
   "name": "Personal Video & Audio Downloader",
-  "version": "1.6.0",
-  "description": "Save permitted media from sites supported by yt-dlp as MP3 or MP4 through a local helper on Windows, macOS, Linux, and ChromeOS.",
+  "version": "1.5.3",
+  "description": "Save permitted media from sites supported by yt-dlp as MP3 or MP4 through a local helper on Windows, macOS, or Linux.",
   "permissions": ["activeTab", "tabs", "storage"],
   "host_permissions": [
     "http://127.0.0.1:47821/*",
-    "http://penguin.linux.test:47821/*",
     "https://youtube.com/*",
     "https://*.youtube.com/*",
     "https://youtu.be/*",

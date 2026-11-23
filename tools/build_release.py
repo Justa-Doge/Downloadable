@@ -42,10 +42,6 @@ PLATFORM_FILES = {
         "launchers/linux/setup.sh",
         "launchers/linux/start.sh",
     },
-    "linux-chromeos": {
-        "launchers/linux/setup.sh",
-        "launchers/linux/start.sh",
-    },
 }
 
 
@@ -82,7 +78,7 @@ def build(output: Path, platform: str = "all") -> None:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("output", nargs="?", type=Path)
-    parser.add_argument("--platform", choices=("all", "windows", "macos", "linux", "linux-chromeos"), default="all")
+    parser.add_argument("--platform", choices=("all", "windows", "macos", "linux"), default="all")
     args = parser.parse_args()
     if args.output is None:
         # Keep the extracted install folder stable across updates. The
@@ -93,7 +89,6 @@ def main() -> None:
             "windows": "Downloadable-Windows",
             "macos": "Downloadable-MacOS",
             "linux": "Downloadable-Linux",
-            "linux-chromeos": "Downloadable-Linux-ChromeOS",
         }
         args.output = ROOT / f"{names[args.platform]}.zip"
     build(args.output.resolve(), args.platform)

@@ -2,7 +2,7 @@
 
 A Chrome extension for saving media from sites supported by yt-dlp as MP3 or MP4 to a folder you choose, or a TikTok `/photo/` post as PNG. It uses a small local helper because Chrome extensions cannot directly combine media streams or write to arbitrary folders.
 
-Version 1.5.2 is split into platform archives. Windows, macOS, and Linux are confirmed working; ChromeOS remains experimental and untested. The macOS build was tested on an Apple-silicon VM.
+Version 1.5.2 is split into platform archives. Windows, macOS, and Linux are supported. The macOS build was tested on an Apple-silicon VM.
 
 Use this only with videos you own, public-domain material, or videos whose owner has authorized downloads. The platforms' official offline features are the appropriate option for other videos.
 
@@ -44,23 +44,16 @@ TikTok `/photo/` posts show a PNG/s button. Photo carousels are saved as numbere
 
 The Linux build was verified with Chromium, the helper user service, and a real MP4 download.
 
-## Install on ChromeOS
-
-1. Enable the Linux development environment and share the ChromeOS **Downloads** folder with it.
-2. Place this project in the Linux container and run `./launchers/linux/setup.sh` in the Terminal.
-3. Load the `extension` folder in Chrome using **Developer mode → Load unpacked**.
-4. The extension uses `penguin.linux.test` to reach the helper in the Linux container. MP3 and MP4 defaults point to the shared ChromeOS Downloads folder when it is available.
-
 ## Requirements
 
-- Windows 10/11, macOS, Linux, or ChromeOS with the Linux development environment
+- Windows 10/11, macOS, or Linux
 - Google Chrome or another Chromium browser
 - Internet access during initial setup
-- `ffmpeg` and Python 3 available on the command line; macOS setup can offer to install missing copies through Homebrew, and installs the Python-side TikTok impersonation dependency automatically
+- `ffmpeg` and Python 3.10+ available on the command line; macOS setup can offer to install missing copies through Homebrew, and installs the Python-side TikTok impersonation dependency automatically
 
 ## Build a release ZIP
 
-Run `python3 tools/build_release.py --platform macos`, `--platform windows`, or `--platform linux-chromeos` from the project folder to build a platform-specific archive. The default archive names are stable (`Downloadable-MacOS.zip`, `Downloadable-Windows.zip`, and `Downloadable-Linux-ChromeOS.zip`) so extracting an update reuses the same folder instead of creating a new version-numbered folder. The manifest and GitHub release tag carry the actual version. The builder excludes tokens, saved folders, virtual environments, generated extension configuration, caches, and temporary files. It preserves executable permissions for macOS `.command` and Linux `.sh` launchers. The Linux/ChromeOS archive is experimental.
+Run `python3 tools/build_release.py --platform macos`, `--platform windows`, or `--platform linux` from the project folder to build a platform-specific archive. The default archive names are stable (`Downloadable-MacOS.zip`, `Downloadable-Windows.zip`, and `Downloadable-Linux.zip`) so extracting an update reuses the same folder instead of creating a new version-numbered folder. The manifest and GitHub release tag carry the actual version. The builder excludes tokens, saved folders, virtual environments, generated extension configuration, caches, and temporary files. It preserves executable permissions for macOS `.command` and Linux `.sh` launchers.
 
 ## Troubleshooting
 

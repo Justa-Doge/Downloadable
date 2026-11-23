@@ -7,13 +7,23 @@ cd "$PROJECT_DIR"
 RUNTIME_DIR="$HOME/Library/Application Support/Downloadable"
 mkdir -p "$RUNTIME_DIR"
 
+python_supported() {
+  local candidate="$1"
+  [[ -x "$candidate" ]] || return 1
+  "$candidate" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 10) else 1)' >/dev/null 2>&1
+}
+
 echo "Setting up the local downloader…"
 PYTHON_BIN="$(command -v python3 || true)"
+
+if [[ -n "$PYTHON_BIN" ]] && ! python_supported "$PYTHON_BIN"; then
+  PYTHON_BIN=""
+fi
 
 # Prefer a current Homebrew Python over Apple's legacy Command Line Tools
 # Python 3.9, which is no longer supported by current yt-dlp releases.
 for candidate in /opt/homebrew/bin/python3 /usr/local/bin/python3; do
-  if [[ -x "$candidate" ]]; then
+  if python_supported "$candidate"; then
     PYTHON_BIN="$candidate"
     break
   fi
@@ -26,7 +36,7 @@ if [[ -z "$PYTHON_BIN" ]]; then
     if [[ "$INSTALL_PYTHON" == [Yy] ]]; then
       brew install python
       for candidate in /opt/homebrew/bin/python3 /usr/local/bin/python3; do
-        if [[ -x "$candidate" ]]; then
+        if python_supported "$candidate"; then
           PYTHON_BIN="$candidate"
           break
         fi

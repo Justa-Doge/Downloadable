@@ -94,11 +94,12 @@ function setPhotoMode(photo) {
 async function helperRequest(path, options = {}) {
   if (!token) throw new Error("Helper is not configured. Run Downloadable.cmd, then reload the extension.");
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 5000);
+  const { timeoutMs = path === "/choose-folder" ? 60000 : 5000, ...requestOptions } = options;
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   let response;
   try {
     response = await fetch(`${HELPER_URL}${path}`, {
-      ...options,
+      ...requestOptions,
       signal: controller.signal,
       cache: "no-store",
       headers: {
@@ -369,6 +370,7 @@ folderButtons.forEach((button) => {
     try {
       const result = await helperRequest("/choose-folder", {
         method: "POST",
+        timeoutMs: 60000,
         body: JSON.stringify({ format })
       });
       showDestination(format, result.destination);

@@ -56,3 +56,13 @@
 - Moved the macOS virtual environment itself into Application Support so setup does not try to write `.venv` inside protected Downloads.
 - Fixed the final macOS setup token-generation path that still referenced the old Downloads virtual environment.
 - Made downloads invoke yt-dlp through the active Python environment and fixed error logging on macOS Python 3.9.
+### Local macOS fix
+- The macOS setup launcher now rejects Python versions older than 3.10 before creating the runtime, then prefers a supported Homebrew Python. This avoids setup succeeding with Apple's legacy/old Python and failing later during yt-dlp installation.
+- Folder selection now has a dedicated 60-second extension timeout instead of sharing the five-second helper-request timeout, so slower native pickers can finish on macOS, Windows, and Linux.
+- ChromeOS support is removed from the extension, helper defaults, manifest permissions, documentation, and release builder. Linux remains supported; ChromeOS is no longer a target.
+
+### 1.5.3
+- Folder selection now has a dedicated 60-second extension timeout instead of sharing the five-second helper-request timeout.
+- macOS setup rejects Python versions older than 3.10 before creating the runtime.
+- ChromeOS is removed from the public extension/release surface; verified Linux code is unchanged.
+
