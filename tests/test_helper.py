@@ -65,20 +65,20 @@ class SharedHelperTests(unittest.TestCase):
             outputs = [staging / name for name in ("first.png", "second.png", "third.png")]
             for output in outputs:
                 output.write_bytes(b"new")
-            replace = Path.replace
+            publish_file = helper.publish_file_without_overwrite
 
-            def fail_last_save(path, target):
-                if path == outputs[-1]:
+            def fail_last_save(output, target):
+                if output == outputs[-1]:
                     raise PermissionError("Final photo is locked")
-                return replace(path, target)
+                return publish_file(output, target)
 
-            with mock.patch.object(Path, "replace", fail_last_save):
+            with mock.patch.object(helper, "publish_file_without_overwrite", fail_last_save):
                 with self.assertRaisesRegex(PermissionError, "locked"):
                     helper.publish_download(outputs, destination)
             self.assertEqual(existing.read_bytes(), b"original")
+            self.assertFalse((destination / "first (2).png").exists())
             self.assertFalse((destination / "second.png").exists())
             self.assertFalse((destination / "third.png").exists())
-            self.assertEqual(list(destination.glob(".downloadable-backup-*")), [])
 
     def test_split_stream_progress_preserves_video_progress_when_audio_starts(self):
         formats = [
@@ -171,7 +171,10 @@ class SharedHelperTests(unittest.TestCase):
                 self.assertEqual(helper.JOBS["abc"]["error"], "Download canceled.")
                 self.assertEqual(helper.JOBS["def"]["status"], "queued")
                 helper.download_worker("def", "https://example.com/finished", "mp3", destination)
-                self.assertEqual(existing.read_bytes(), b"new")
+                self.assertEqual(existing.read_bytes(), b"original")
+                duplicate = destination / "existing (2).mp3"
+                self.assertEqual(duplicate.read_bytes(), b"new")
+                self.assertEqual(helper.JOBS["def"]["filename"], duplicate.name)
                 self.assertEqual(helper.JOBS["def"]["status"], "complete")
                 handler.path = "/jobs/def/cancel"
                 handler.do_POST()

@@ -841,11 +841,6 @@ def publish_download(outputs: list[Path], destination: Path) -> list[Path]:
                         f"Could not safely save {output.name} without replacing an existing file. "
                         "Try a folder on a local filesystem that supports hard links."
                     ) from error
-                try:
-                    output.unlink()
-                except OSError:
-                    target.unlink(missing_ok=True)
-                    raise
                 reserved.add(target)
                 published.append((output, target))
                 break
