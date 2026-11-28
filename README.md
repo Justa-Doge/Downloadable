@@ -2,7 +2,7 @@
 
 A Chrome extension for saving media from sites supported by yt-dlp as MP3 or MP4 to a folder you choose, or a TikTok `/photo/` post as PNG. It uses a small local helper because Chrome extensions cannot directly combine media streams or write to arbitrary folders.
 
-Version 1.5.2 is split into platform archives. Windows, macOS, and Linux are supported. The macOS build was tested on an Apple-silicon VM.
+Version 1.5.4 is the current local test build. Separate archives are provided for Windows, macOS, and Linux; platform runtime validation is still in progress.
 
 Use this only with videos you own, public-domain material, or videos whose owner has authorized downloads. The platforms' official offline features are the appropriate option for other videos.
 
@@ -25,7 +25,7 @@ YouTube and YouTube Music MP3 downloads include the source thumbnail as cover ar
 2. In Chrome, open `chrome://extensions`, turn on **Developer mode**, choose **Load unpacked**, and select this project's `extension` folder. The extension asks you to confirm that you have read this README the first time it opens.
 3. No PowerShell or command prompt needs to stay open. Windows repair and diagnostic launchers are in `launchers/windows/`; the normal entry point is still `Downloadable.cmd`.
 
-The MP3 and MP4 folders are remembered separately in both the local helper and Chrome's extension storage. Only one download runs at a time.
+The MP3, MP4, and PNG folders are remembered separately. Up to three downloads can run at once. Each has its own progress card and Cancel button. Time left estimates the current transfer and clears during conversion.
 
 Open the gear button in the extension popup for local helper status, a manual reconnect check, clearing saved destination folders, opening the temporary error-log folder, and a shortcut back to Chrome's extension details page. Downloads can be canceled while they are running. Reconnect only checks the existing local helper; it does not reauthorize an account or send data anywhere.
 
@@ -42,7 +42,7 @@ TikTok `/photo/` posts show a PNG/s button. Photo carousels are saved as numbere
 3. In Chrome, open `chrome://extensions`, enable **Developer mode**, and choose **Load unpacked** for this project's `extension` folder.
 4. If your desktop does not provide a user service manager, setup starts the helper for the current session; use `./launchers/linux/start.sh` after reboot.
 
-The Linux build was verified with Chromium, the helper user service, and a real MP4 download.
+Version 1.5.2 was verified on Linux with Chromium, the helper user service, and a real MP4 download. Linux validation for the current changes is pending.
 
 ## Requirements
 
@@ -54,6 +54,13 @@ The Linux build was verified with Chromium, the helper user service, and a real 
 ## Build a release ZIP
 
 Run `python3 tools/build_release.py --platform macos`, `--platform windows`, or `--platform linux` from the project folder to build a platform-specific archive. The default archive names are stable (`Downloadable-MacOS.zip`, `Downloadable-Windows.zip`, and `Downloadable-Linux.zip`) so extracting an update reuses the same folder instead of creating a new version-numbered folder. The manifest and GitHub release tag carry the actual version. The builder excludes tokens, saved folders, virtual environments, generated extension configuration, caches, and temporary files. It preserves executable permissions for macOS `.command` and Linux `.sh` launchers.
+
+## Test the helper
+
+From the source checkout or a ZIP built with `--include-tests`, run `python -m unittest discover -s tests`. For concurrent transfers, cancel cleanup, split-stream MP4 merging, and portrait PNG output, run `python tests/media_smoke.py` using the helper's Python environment with FFmpeg and FFprobe on your PATH. The tests serve generated media locally and use temporary destinations.
+
+- macOS: From the extracted folder, run `"$HOME/Library/Application Support/Downloadable/.venv/bin/python" tests/media_smoke.py` after setup. If you installed FFmpeg with Homebrew, make sure its bin folder is on your PATH.
+- Linux: From the extracted folder, run `./.venv/bin/python tests/media_smoke.py` after setup.
 
 ## Troubleshooting
 

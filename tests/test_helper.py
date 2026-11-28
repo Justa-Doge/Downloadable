@@ -43,6 +43,53 @@ class FolderPickerTests(unittest.TestCase):
 
 
 class SharedHelperTests(unittest.TestCase):
+    def test_cleanup_retries_when_a_partial_webm_is_temporarily_locked(self):
+        with tempfile.TemporaryDirectory() as directory:
+            staging = Path(directory) / "job"
+            staging.mkdir()
+            (staging / "source.webm.part").write_bytes(b"partial")
+            remove = helper.shutil.rmtree
+            with mock.patch.object(helper.shutil, "rmtree", side_effect=[PermissionError(), None]) as cleanup:
+                with mock.patch.object(helper.time, "sleep"):
+                    helper.clean_download_staging(staging)
+            self.assertEqual(cleanup.call_count, 2)
+            remove(staging)
+
+    def test_failed_photo_batch_restores_existing_files_and_removes_new_files(self):
+        with tempfile.TemporaryDirectory() as directory:
+            destination = Path(directory)
+            staging = destination / "staging"
+            staging.mkdir()
+            existing = destination / "first.png"
+            existing.write_bytes(b"original")
+            outputs = [staging / name for name in ("first.png", "second.png", "third.png")]
+            for output in outputs:
+                output.write_bytes(b"new")
+            replace = Path.replace
+
+            def fail_last_save(path, target):
+                if path == outputs[-1]:
+                    raise PermissionError("Final photo is locked")
+                return replace(path, target)
+
+            with mock.patch.object(Path, "replace", fail_last_save):
+                with self.assertRaisesRegex(PermissionError, "locked"):
+                    helper.publish_download(outputs, destination)
+            self.assertEqual(existing.read_bytes(), b"original")
+            self.assertFalse((destination / "second.png").exists())
+            self.assertFalse((destination / "third.png").exists())
+            self.assertEqual(list(destination.glob(".downloadable-backup-*")), [])
+
+    def test_split_stream_progress_preserves_video_progress_when_audio_starts(self):
+        formats = [
+            {"format_id": "video", "filesize": 900},
+            {"format_id": "audio", "filesize_approx": 100},
+        ]
+        self.assertEqual(helper.transfer_progress(100, "video", formats), (85.5, True))
+        self.assertEqual(helper.transfer_progress(0, "audio", formats), (85.5, True))
+        self.assertEqual(helper.transfer_progress(100, "audio", formats), (95.0, True))
+        self.assertEqual(helper.transfer_progress(50, "video+audio", formats), (47.5, False))
+
     @unittest.skipUnless(helper.os.name == "nt", "Windows log-folder test")
     def test_open_log_folder_recreates_directory_and_uses_explorer(self):
         with mock.patch("pathlib.Path.mkdir") as mkdir, mock.patch.object(helper.subprocess, "Popen") as popen:
@@ -87,13 +134,49 @@ class SharedHelperTests(unittest.TestCase):
             with mock.patch.object(helper.subprocess, "Popen") as popen:
                 popen.return_value.stdout = io.StringIO("")
                 popen.return_value.wait.return_value = 0
-                helper.run_download(job_id, "https://www.youtube.com/watch?v=test", "mp4", directory)
+                with self.assertRaisesRegex(ValueError, "finished file"):
+                    helper.run_download(job_id, "https://www.youtube.com/watch?v=test", "mp4", directory)
             if helper.os.name == "nt":
                 self.assertEqual(popen.call_args.kwargs["creationflags"], helper.subprocess.CREATE_NO_WINDOW)
             else:
                 self.assertNotIn("creationflags", popen.call_args.kwargs)
         finally:
             del helper.JOBS[job_id]
+
+    def test_cancel_preserves_neighboring_files_and_other_jobs(self):
+        with tempfile.TemporaryDirectory() as directory, mock.patch.dict(helper.JOBS, {
+            "abc": {"status": "queued"},
+            "def": {"status": "queued"},
+        }, clear=True):
+            destination = Path(directory)
+            existing = destination / "existing.mp3"
+            existing.write_bytes(b"original")
+            handler = object.__new__(helper.Handler)
+            handler.path = "/jobs/abc/cancel"
+            handler.headers = {"X-Helper-Token": "test-token"}
+            handler.send_json = mock.Mock()
+            handler.read_json = mock.Mock(return_value={})
+
+            def finish(job_id, url, output_format, staging, title):
+                output = staging / "existing.mp3"
+                output.write_bytes(b"new")
+                if job_id == "abc":
+                    handler.do_POST()
+                return [output]
+
+            with mock.patch.object(helper, "TOKEN", "test-token"), mock.patch.object(helper, "run_download", finish):
+                helper.download_worker("abc", "https://example.com/canceled", "mp3", destination)
+                self.assertEqual(existing.read_bytes(), b"original")
+                self.assertEqual(list(destination.iterdir()), [existing])
+                self.assertEqual(helper.JOBS["abc"]["error"], "Download canceled.")
+                self.assertEqual(helper.JOBS["def"]["status"], "queued")
+                helper.download_worker("def", "https://example.com/finished", "mp3", destination)
+                self.assertEqual(existing.read_bytes(), b"new")
+                self.assertEqual(helper.JOBS["def"]["status"], "complete")
+                handler.path = "/jobs/def/cancel"
+                handler.do_POST()
+                handler.send_json.assert_called_with(200, {"canceled": False})
+                self.assertEqual(helper.JOBS["def"]["status"], "complete")
 
     def test_extension_request_without_origin_uses_token(self):
         handler = object.__new__(helper.Handler)

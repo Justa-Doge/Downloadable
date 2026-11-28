@@ -7,6 +7,8 @@ try {
     $entries = $env:PATH -split ";"
     if ($entries -notcontains $links) { $env:PATH = "$links;$env:PATH" }
   }
+  $ffmpegBin = Get-ChildItem "$env:LOCALAPPDATA\Microsoft\WinGet\Packages\Gyan.FFmpeg.Shared_*\ffmpeg-*-full_build-shared\bin" -Directory -ErrorAction SilentlyContinue | Select-Object -First 1
+  if ($ffmpegBin -and ($env:PATH -split ';') -notcontains $ffmpegBin.FullName) { $env:PATH = "$($ffmpegBin.FullName);$env:PATH" }
   if (-not (Test-Path ".venv\Scripts\python.exe")) {
     throw "Python environment is missing. Run Downloadable.cmd first."
   }

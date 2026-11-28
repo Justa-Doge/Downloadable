@@ -11,8 +11,7 @@ const folderElements = {
 const folderButtons = [...document.querySelectorAll(".folder-button")];
 const downloadButtons = [...document.querySelectorAll(".download-button")];
 const progressWrap = document.querySelector("#progress-wrap");
-const progressBar = document.querySelector("#progress-bar");
-const progressText = document.querySelector("#progress-text");
+const jobTemplate = document.querySelector("#download-job");
 const statusElement = document.querySelector("#status");
 const settingsButton = document.querySelector("#settings-button");
 const settingsPanel = document.querySelector("#settings-panel");
@@ -25,7 +24,6 @@ const checkUpdateButton = document.querySelector("#check-update-button");
 const restartUpdateButton = document.querySelector("#restart-update-button");
 const repairSetupButton = document.querySelector("#repair-setup-button");
 const updateStatus = document.querySelector("#update-status");
-const cancelButton = document.querySelector("#cancel-button");
 const firstRun = document.querySelector("#first-run");
 const readmeConfirm = document.querySelector("#readme-confirm");
 const continueButton = document.querySelector("#continue-button");
@@ -33,9 +31,8 @@ const continueButton = document.querySelector("#continue-button");
 let currentUrl = "";
 let currentTitle = "";
 const destinations = { mp3: "", mp4: "", png: "" };
-let pollTimer = null;
 let helperConnected = false;
-let activeJobId = null;
+const trackedJobs = new Set();
 
 async function initializeFirstRun() {
   const { readmeAcknowledged } = await chrome.storage.local.get("readmeAcknowledged");
@@ -76,14 +73,6 @@ function showUpdateStatus(update, version = "") {
   updateStatus.className = "update-status";
 }
 
-function setBusy(busy) {
-  folderButtons.forEach((button) => { button.disabled = busy; });
-  const type = mediaType(currentUrl);
-  downloadButtons.forEach((button) => {
-    button.disabled = busy || !currentUrl || (type === "sound" && button.dataset.format === "mp4");
-  });
-}
-
 function setPhotoMode(photo) {
   document.querySelectorAll(".photo-only").forEach((element) => {
     element.hidden = !photo;
@@ -115,7 +104,11 @@ async function helperRequest(path, options = {}) {
     clearTimeout(timeout);
   }
   const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(body.error || `Helper error (${response.status})`);
+  if (!response.ok) {
+    const error = new Error(body.error || `Helper error (${response.status})`);
+    error.status = response.status;
+    throw error;
+  }
   return body;
 }
 
@@ -240,7 +233,7 @@ async function initialize() {
         await rememberDestination(format, savedDestination);
       }
     }
-    if (state.active_job) trackJob(state.active_job);
+    (state.active_jobs || (state.active_job ? [state.active_job] : [])).forEach(trackJob);
     showUpdateStatus(state.update, state.version);
     if (state.update) setStatus(`Downloadable ${state.update.version} is ready. Restart the helper to apply it.`, "success");
   } catch (error) {
@@ -258,7 +251,7 @@ reconnectButton.addEventListener("click", async () => {
   reconnectButton.disabled = true;
   try {
     const state = await connectHelper(true);
-    if (state.active_job) trackJob(state.active_job);
+    (state.active_jobs || (state.active_job ? [state.active_job] : [])).forEach(trackJob);
   } catch (_) {
     // connectHelper already explains the failure in the popup.
   } finally {
@@ -345,18 +338,6 @@ repairSetupButton.addEventListener("click", async () => {
   }
 });
 
-cancelButton.addEventListener("click", async () => {
-  if (!activeJobId) return;
-  cancelButton.disabled = true;
-  try {
-    await helperRequest(`/jobs/${activeJobId}/cancel`, { method: "POST", body: "{}" });
-    setStatus("Cancel requested…");
-  } catch (error) {
-    cancelButton.disabled = false;
-    setStatus(error.message, "error");
-  }
-});
-
 extensionsButton.addEventListener("click", () => {
   chrome.tabs.create({ url: "chrome://extensions" });
 });
@@ -398,7 +379,7 @@ downloadButtons.forEach((button) => {
       return;
     }
 
-    setBusy(true);
+    button.disabled = true;
     setStatus("Sending download to helper…");
     try {
       const result = await helperRequest("/download", {
@@ -406,57 +387,84 @@ downloadButtons.forEach((button) => {
         body: JSON.stringify({ url: currentUrl, format, destination: destinations[format], title: currentTitle })
       });
       trackJob(result.job_id);
+      setStatus("");
     } catch (error) {
-      setBusy(false);
       setStatus(error.message, "error");
+    } finally {
+      button.disabled = !currentUrl || mediaType(currentUrl) === "sound";
     }
   });
 });
 
 function trackJob(jobId) {
-  activeJobId = jobId;
-  clearTimeout(pollTimer);
-  setBusy(true);
+  if (trackedJobs.has(jobId)) return;
+  trackedJobs.add(jobId);
+  const row = jobTemplate.content.firstElementChild.cloneNode(true);
+  const title = row.querySelector(".job-title");
+  const percentLabel = row.querySelector(".job-percent");
+  const bar = row.querySelector(".progress-bar");
+  const track = row.querySelector(".progress-track");
+  const eta = row.querySelector(".job-eta");
+  const speed = row.querySelector(".job-speed");
+  const message = row.querySelector(".job-message");
+  const cancel = row.querySelector(".cancel-button");
+  title.textContent = "Download";
+  message.textContent = "Connecting to helper…";
+  progressWrap.prepend(row);
   progressWrap.hidden = false;
-  cancelButton.hidden = false;
-  cancelButton.disabled = false;
-  let transientFailures = 0;
+  let lastMetaUpdate = -Infinity;
+  let delay = 700;
+  let cancelRequested = false;
+
+  cancel.addEventListener("click", async () => {
+    cancelRequested = true;
+    cancel.disabled = true;
+    try {
+      await helperRequest(`/jobs/${jobId}/cancel`, { method: "POST", body: "{}" });
+    } catch (error) {
+      cancelRequested = false;
+      cancel.disabled = false;
+      setStatus(error.message, "error");
+    }
+  });
 
   const poll = async () => {
     try {
       const job = await helperRequest(`/jobs/${jobId}`);
-      transientFailures = 0;
+      delay = 700;
+      title.textContent = [job.format?.toUpperCase(), job.title].filter(Boolean).join(" · ") || "Download";
       const percent = Math.max(0, Math.min(100, Number(job.progress) || 0));
-      progressBar.style.width = `${percent}%`;
-      const message = job.message || `${percent.toFixed(1)}%`;
-      progressText.textContent = message;
-      if (job.status !== "complete" && job.status !== "error") setStatus(message);
-
-      if (job.status === "complete") {
-        activeJobId = null;
-        cancelButton.hidden = true;
-        setBusy(false);
-        setStatus(`Saved: ${job.filename}`, "success");
+      bar.style.width = `${percent}%`;
+      percentLabel.textContent = `${Math.round(percent)}%`;
+      track.setAttribute("aria-valuenow", String(percent));
+      const finished = job.status === "complete" || job.status === "error";
+      const now = performance.now();
+      if (finished || now - lastMetaUpdate >= 2000) {
+        const etaLabel = job.eta && job.eta_scope ? `${job.eta_scope} time left` : "Time left";
+        eta.textContent = `${etaLabel}: ${job.eta || "—"}`;
+        speed.textContent = `Network speed: ${job.speed || "—"}`;
+        lastMetaUpdate = now;
+      }
+      cancel.disabled = cancelRequested || job.status === "canceling";
+      if (finished) {
+        row.dataset.finished = "true";
+        cancel.hidden = true;
+        message.textContent = job.status === "complete" ? `Saved: ${job.filename}` : job.error || "Download failed.";
+        [...progressWrap.querySelectorAll("[data-finished]")].slice(3).forEach((olderRow) => olderRow.remove());
         return;
       }
-      if (job.status === "error") {
-        activeJobId = null;
-        cancelButton.hidden = true;
-        setBusy(false);
-        setStatus(job.error || "Download failed.", "error");
-        return;
-      }
-      pollTimer = setTimeout(poll, 700);
+      message.textContent = job.message || "Downloading…";
     } catch (error) {
-      transientFailures += 1;
-      if (transientFailures >= 8) {
-        setBusy(false);
-        setStatus(`${error.message} Retrying is available from Settings.`, "error");
+      message.textContent = error.message;
+      if (error.status === 404) {
+        trackedJobs.delete(jobId);
+        row.remove();
+        progressWrap.hidden = !progressWrap.childElementCount;
         return;
       }
-      setStatus(`Still working… (${error.message})`);
-      pollTimer = setTimeout(poll, Math.min(2500, 700 + transientFailures * 250));
+      delay = Math.min(2500, delay + 250);
     }
+    setTimeout(poll, delay);
   };
   poll();
 }

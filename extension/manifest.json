@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Personal Video & Audio Downloader",
-  "version": "1.5.3",
+  "version": "1.5.4",
   "description": "Save permitted media from sites supported by yt-dlp as MP3 or MP4 through a local helper on Windows, macOS, or Linux.",
   "permissions": ["activeTab", "tabs", "storage"],
   "host_permissions": [

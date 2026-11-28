@@ -159,10 +159,20 @@ p { margin: 0; }
 
 .progress-wrap { margin-top: 15px; }
 .progress-track { height: 7px; overflow: hidden; border-radius: 10px; background: #292d35; }
-#progress-bar { width: 0; height: 100%; background: #4ade80; transition: width .25s ease; }
-#progress-text { margin-top: 7px; color: #b8bdc8; font-size: 12px; }
+#progress-bar, .progress-bar { width: 0; height: 100%; background: #4ade80; transition: width .25s ease; }
+.download-job { margin-top: 10px; padding: 10px; border: 1px solid #2d313b; border-radius: 10px; background: #191c22; }
+.job-heading, .job-footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.job-heading { margin-bottom: 7px; }
+.job-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 600; }
+.job-percent, .progress-meta { color: #b8bdc8; font-size: 11px; font-variant-numeric: tabular-nums; }
+.progress-meta { display: flex; justify-content: space-between; gap: 8px; margin-top: 7px; }
+.progress-meta span:last-child { text-align: right; }
+.job-footer { margin-top: 8px; }
+.job-message { min-width: 0; color: #b8bdc8; font-size: 11px; overflow-wrap: anywhere; }
 .cancel-button { margin-top: 8px; padding: 7px 10px; border: 1px solid #7f1d1d; border-radius: 7px; background: #3f1d24; color: #fecaca; cursor: pointer; font: inherit; font-size: 11px; }
+.download-job .cancel-button { flex: none; margin-top: 0; }
 .cancel-button:hover { border-color: #fb7185; }
+.cancel-button:disabled { opacity: .5; cursor: default; }
 .status { min-height: 18px; margin-top: 12px; font-size: 12px; color: #fbbf24; }
 .status.success { color: #4ade80; }
 .status.error { color: #fb7185; }

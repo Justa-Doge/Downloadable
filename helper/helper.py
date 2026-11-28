@@ -7,10 +7,12 @@ import json
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import threading
 import tempfile
+import time
 import traceback
 import uuid
 import urllib.error
@@ -49,6 +51,7 @@ else:
 TOKEN = TOKEN_FILE.read_text(encoding="utf-8").strip() if TOKEN_FILE.exists() else ""
 JOBS: dict[str, dict] = {}
 LOCK = threading.Lock()
+STATE_LOCK = threading.Lock()
 UPDATE_LOCK = threading.Lock()
 RESTART_LOCK = threading.Lock()
 
@@ -255,7 +258,16 @@ def load_state() -> dict:
 
 
 def save_state(state: dict) -> None:
-    STATE_FILE.write_text(json.dumps(state, indent=2), encoding="utf-8")
+    pending = STATE_FILE.with_suffix(".tmp")
+    pending.write_text(json.dumps(state, indent=2), encoding="utf-8")
+    pending.replace(STATE_FILE)
+
+
+def remember_destination(output_format: str, destination: str) -> None:
+    with STATE_LOCK:
+        state = load_state()
+        state[f"{output_format}_destination"] = destination
+        save_state(state)
 
 
 def choose_folder(output_format: str) -> str:
@@ -416,9 +428,50 @@ def is_youtube_url(value: str) -> bool:
 
 def update_job(job_id: str, **changes: object) -> None:
     with LOCK:
-        if job_id in JOBS:
+        if job_id in JOBS and not JOBS[job_id].get("cancel_requested"):
             changes.setdefault("updated_at", __import__("time").monotonic())
             JOBS[job_id].update(changes)
+
+
+class DownloadCanceled(Exception):
+    pass
+
+
+def check_canceled(job_id: str) -> None:
+    with LOCK:
+        if JOBS[job_id].get("cancel_requested"):
+            raise DownloadCanceled
+
+
+def start_download_process(job_id: str, command: list[str], **options) -> subprocess.Popen:
+    with LOCK:
+        job = JOBS[job_id]
+        if job.get("cancel_requested"):
+            raise DownloadCanceled
+        platform_options = (
+            {"creationflags": subprocess.CREATE_NO_WINDOW}
+            if os.name == "nt" else {"start_new_session": True}
+        )
+        process = subprocess.Popen(command, **platform_options, **options)
+        job["process"] = process
+        return process
+
+
+def stop_download_process(process: subprocess.Popen) -> None:
+    if process.poll() is not None:
+        return
+    if os.name == "nt":
+        result = subprocess.run(
+            ["taskkill.exe", "/PID", str(process.pid), "/T", "/F"],
+            capture_output=True, creationflags=subprocess.CREATE_NO_WINDOW, check=False,
+        )
+        if result.returncode and process.poll() is None:
+            process.kill()
+    else:
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
 
 
 def start_job_heartbeat(job_id: str, process: subprocess.Popen[str]) -> None:
@@ -432,9 +485,8 @@ def start_job_heartbeat(job_id: str, process: subprocess.Popen[str]) -> None:
                 if not job or job.get("status") in {"complete", "error"}:
                     return
                 quiet_for = time.monotonic() - float(job.get("updated_at", time.monotonic()))
-                started_at = float(job.get("started_at", time.monotonic()))
             if quiet_for >= 5:
-                update_job(job_id, message=f"Still working… {int(time.monotonic() - started_at)}s elapsed")
+                update_job(job_id, message="Still working…")
     threading.Thread(target=heartbeat, name=f"download-heartbeat-{job_id}", daemon=True).start()
 
 
@@ -513,12 +565,14 @@ def fetch_tiktok_photo_urls(url: str) -> tuple[list[str], dict]:
     with urllib.request.urlopen(request, timeout=30) as response:
         metadata = json.loads(response.read().decode("utf-8"))
     thumbnail = str(metadata.get("thumbnail_url") or "")
-    if thumbnail and thumbnail not in urls:
+    # The oEmbed thumbnail is commonly a cropped 16:9 preview. Only use it
+    # when the post did not expose any of its original photo URLs.
+    if thumbnail and not urls:
         urls.append(thumbnail)
     return urls, metadata
 
 
-def run_photo_download(job_id: str, url: str, destination: Path) -> None:
+def run_photo_download(job_id: str, url: str, destination: Path) -> list[Path]:
     """Save the image exposed by a TikTok photo post as a PNG."""
     update_job(job_id, status="downloading", message="Preparing photo…")
     image_urls, metadata = fetch_tiktok_photo_urls(url)
@@ -528,24 +582,44 @@ def run_photo_download(job_id: str, url: str, destination: Path) -> None:
     post_id = urlparse(url).path.rstrip("/").rsplit("/", 1)[-1] or "photo"
     total = len(image_urls)
     ffmpeg = shutil.which("ffmpeg") or "ffmpeg"
-    outputs: list[str] = []
+    outputs: list[Path] = []
     for index, image_url in enumerate(image_urls, start=1):
+        check_canceled(job_id)
         suffix = f" ({index:02d})" if total > 1 else ""
         stem = f"{title[:120]} [{post_id}]{suffix}"
         source = destination / f".{stem}.source.jpg"
         output = destination / f"{stem}.png"
-        urllib.request.urlretrieve(image_url, source)
-        update_job(job_id, progress=10 + (index - 1) * 80 / total, message=f"Converting photo {index} of {total}…")
-        result = subprocess.run(
-            [ffmpeg, "-y", "-i", str(source), "-frames:v", "1", str(output)],
-            capture_output=True, text=True, check=False,
-            **({"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt" else {}),
-        )
+        started = time.monotonic()
+        received = 0
+        with urllib.request.urlopen(image_url, timeout=30) as response, source.open("wb") as stream:
+            length = response.length
+            while chunk := response.read(65536):
+                check_canceled(job_id)
+                stream.write(chunk)
+                received += len(chunk)
+                elapsed = time.monotonic() - started
+                speed = received / elapsed if elapsed > 0 else 0
+                fraction = min(received / length, 1) if length else 0
+                remaining = (length - received) / speed if length and speed and length >= received else None
+                update_job(job_id, progress=95 * (index - 1 + .9 * fraction) / total,
+                           message=f"Downloading photo {index} of {total}…",
+                           speed=f"{speed / 1024:.0f} KiB/s" if elapsed >= .3 else "",
+                           eta=format_eta(remaining) if elapsed >= .3 else "",
+                           eta_scope="Photo" if total > 1 else "")
+        update_job(job_id, progress=95 * (index - .1) / total,
+                   message=f"Converting photo {index} of {total}…", speed="", eta="")
+        with start_download_process(
+            job_id, [ffmpeg, "-nostdin", "-y", "-i", str(source), "-frames:v", "1", str(output)],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        ) as process:
+            return_code = process.wait()
+        update_job(job_id, process=None)
+        check_canceled(job_id)
         source.unlink(missing_ok=True)
-        if result.returncode != 0 or not output.exists():
+        if return_code != 0 or not output.is_file():
             raise RuntimeError("Could not convert a TikTok photo to PNG.")
-        outputs.append(output.name)
-    update_job(job_id, status="complete", progress=100, message=f"Saved {total} photo{'s' if total != 1 else ''}.", filename=outputs[0] if total == 1 else f"{total} PNG files")
+        outputs.append(output)
+    return outputs
 
 
 def fallback_filename(title: str, output_format: str) -> str:
@@ -555,31 +629,64 @@ def fallback_filename(title: str, output_format: str) -> str:
     return cleaned or f"{output_format.upper()} download"
 
 
-def run_download(job_id: str, url: str, output_format: str, destination: Path, title: str = "") -> None:
+def format_eta(seconds: float | None) -> str:
+    if seconds is None:
+        return ""
+    minutes, seconds = divmod(max(0, int(seconds + .999)), 60)
+    return f"{minutes:02d}:{seconds:02d}"
+
+
+def transfer_progress(percent: float, format_id: str, formats: list[dict]) -> tuple[float, bool]:
+    """Report one monotonically advancing transfer across separate AV streams."""
+    for index, entry in enumerate(formats):
+        if entry["format_id"] == format_id:
+            sizes = [f.get("filesize") or f.get("filesize_approx") for f in formats]
+            weights = sizes if all(sizes) else [1] * len(formats)
+            return 95 * (sum(weights[:index]) + weights[index] * percent / 100) / sum(weights), len(formats) > 1
+    return .95 * percent, False
+
+
+def run_download(job_id: str, url: str, output_format: str, destination: Path, title: str = "") -> list[Path]:
     if output_format == "png":
-        run_photo_download(job_id, url, destination)
-        return
+        return run_photo_download(job_id, url, destination)
     output_template = str(destination / "%(title).180B [%(id)s].%(ext)s")
     command = [
         sys.executable,
+        "-u",
         "-m",
         "yt_dlp",
         "--newline",
+        # --print implies quiet mode, which otherwise suppresses progress.
+        "--progress",
+        "--no-quiet",
         "--no-playlist",
-        "--no-overwrites",
+        # Replace stale outputs from interrupted runs so Windows can complete
+        # yt-dlp's temporary-file rename instead of failing with Access Denied.
+        "--force-overwrites",
         "--socket-timeout", "30",
         "--retries", "3",
         "--fragment-retries", "3",
         "--restrict-filenames",
         "--progress-template",
-        "download:%(progress._percent_str)s|%(progress._speed_str)s|%(progress._eta_str)s",
+        "download:DOWNLOAD_PROGRESS:%(progress._percent_str)s|%(progress._speed_str)s|%(progress._eta_str)s|%(info.format_id)s",
+        "--print",
+        "before_dl:DOWNLOAD_FORMATS:%(requested_formats.:.{format_id,filesize,filesize_approx})j",
         "--print",
         "after_move:RESULT:%(filepath)s",
         "-o",
         output_template,
     ]
     if output_format == "mp3":
-        command += ["-x", "--audio-format", "mp3", "--audio-quality", "0"]
+        command += [
+            # Avoid downloading a video stream that will be discarded during
+            # MP3 extraction.
+            # Prefer AAC in an M4A container for a smaller, broadly supported
+            # source stream before falling back to the site's best audio.
+            "-f", "bestaudio[ext=m4a]/bestaudio/best",
+            "-x", "--audio-format", "mp3", "--audio-quality", "0",
+            # Keep the V0 bitrate target while reducing LAME's CPU effort.
+            "--postprocessor-args", "ExtractAudio+ffmpeg_o:-compression_level 5",
+        ]
         if is_youtube_url(url):
             command += [
                 "--embed-thumbnail",
@@ -593,6 +700,7 @@ def run_download(job_id: str, url: str, output_format: str, destination: Path, t
             "-f", "bestvideo*+bestaudio/best",
             "-S", "ext:mp4:m4a",
             "--merge-output-format", "mp4",
+            "--remux-video", "mp4",
         ]
     if is_tiktok_url(url):
         command += ["--impersonate", "chrome"]
@@ -600,21 +708,21 @@ def run_download(job_id: str, url: str, output_format: str, destination: Path, t
         command += ["--playlist-end", "1"]
     command.append(url)
 
-    import time
-    update_job(job_id, status="downloading", message="Connecting to video site…", started_at=time.monotonic())
-    process = subprocess.Popen(
-        command,
+    update_job(job_id, status="downloading", message="Connecting to video site…")
+    process = start_download_process(
+        job_id, command,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
+        bufsize=1,
         encoding="utf-8",
         errors="replace",
-        **({"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt" else {}),
     )
-    update_job(job_id, process=process)
     start_job_heartbeat(job_id, process)
     last_line = ""
     result_path: Path | None = None
+    formats: list[dict] = []
+    progress = 0.0
     assert process.stdout is not None
     for raw_line in process.stdout:
         line = raw_line.strip()
@@ -624,31 +732,40 @@ def run_download(job_id: str, url: str, output_format: str, destination: Path, t
         if line.startswith("RESULT:"):
             result_path = Path(line.removeprefix("RESULT:"))
             continue
-        match = re.search(r"download:\s*([\d.]+)\s*%\|([^|]*)\|([^|]*)", line)
+        if line.startswith("DOWNLOAD_FORMATS:"):
+            values = line.removeprefix("DOWNLOAD_FORMATS:")
+            if values.startswith("["):
+                formats = json.loads(values)
+            continue
+        line = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", line)
+        match = re.fullmatch(r"DOWNLOAD_PROGRESS:([^|]*)\|([^|]*)\|([^|]*)\|(.*)", line)
         if match:
-            progress = float(match.group(1))
+            percent = re.fullmatch(r"(\d+(?:\.\d+)?)\s*%", match.group(1).strip())
             speed = match.group(2).strip()
             eta = match.group(3).strip()
-            message = f"{progress:.1f}%"
-            if speed and speed != "N/A":
-                message += f" · {speed}"
-            if eta and eta != "N/A":
-                message += f" · ETA {eta}"
-            update_job(job_id, progress=progress, message=message)
+            split_streams = False
+            if percent:
+                current, split_streams = transfer_progress(min(float(percent.group(1)), 100), match.group(4), formats)
+                progress = max(progress, current)
+            update_job(
+                job_id, progress=progress, message="Downloading media…",
+                speed=speed if speed not in {"N/A", "Unknown"} else "",
+                eta=eta if re.fullmatch(r"\d+(?::\d{2}){1,2}", eta) else "",
+                eta_scope="Stream" if split_streams else "",
+            )
         elif line.startswith("[ExtractAudio]"):
-            update_job(job_id, progress=99, message="Converting to MP3…")
-        elif line.startswith("[Merger]") or line.startswith("[VideoConvertor]"):
-            update_job(job_id, progress=99, message="Merging video and audio…")
+            update_job(job_id, progress=98, speed="", eta="", message="Converting to MP3…")
+        elif line.startswith(("[Merger]", "[VideoConvertor]", "[VideoRemuxer]")):
+            update_job(job_id, progress=98, speed="", eta="", message="Merging video and audio…")
         elif line.startswith("[download] Destination"):
             update_job(job_id, message="Downloading media…")
         elif line.startswith("[youtube]") and "Downloading" in line:
             update_job(job_id, message="Preparing YouTube streams…")
 
     return_code = process.wait()
+    process.stdout.close()
     update_job(job_id, process=None)
-    with LOCK:
-        if JOBS.get(job_id, {}).get("error") == "Download canceled.":
-            return
+    check_canceled(job_id)
     if return_code != 0:
         if is_tiktok_sound_url(url):
             error = (
@@ -663,24 +780,105 @@ def run_download(job_id: str, url: str, output_format: str, destination: Path, t
                 if "unsupported url" in detail.lower() or "no suitable" in detail.lower()
                 else detail
             )
-        update_job(job_id, status="error", error=error)
+        raise ValueError(error)
+    if (result_path is None or result_path.resolve().parent != destination.resolve()
+            or result_path.suffix.lower() != f".{output_format}" or not result_path.is_file()):
+        raise ValueError("The downloader did not produce a finished file.")
+    return [result_path]
+
+
+def publish_download(outputs: list[Path], destination: Path) -> None:
+    """Publish a finished job and roll back a partially saved photo batch."""
+    if len(outputs) == 1:
+        outputs[0].replace(destination / outputs[0].name)
         return
 
-    update_job(
-        job_id,
-        status="complete",
-        progress=100,
-        message="Download complete.",
-        filename=result_path.name if result_path else fallback_filename(title, output_format),
-    )
+    backup_dir = Path(tempfile.mkdtemp(prefix=".downloadable-backup-", dir=destination))
+    backups: dict[Path, Path] = {}
+    published: list[tuple[Path, Path]] = []
+    preserve_backups = False
+    try:
+        for output in outputs:
+            target = destination / output.name
+            if target.is_symlink() or (target.exists() and not target.is_file()):
+                raise OSError(f"Cannot replace {target.name} with a photo.")
+            if target.exists():
+                backup = backup_dir / output.name
+                shutil.copy2(target, backup)
+                backups[target] = backup
+        for output in outputs:
+            target = destination / output.name
+            output.replace(target)
+            published.append((output, target))
+    except OSError as error:
+        for output, target in reversed(published):
+            try:
+                if target in backups:
+                    backups[target].replace(target)
+                else:
+                    target.replace(output)
+            except OSError:
+                preserve_backups = True
+        if preserve_backups:
+            raise OSError(f"Could not restore the photo batch. Recovery files: {backup_dir}") from error
+        raise
+    finally:
+        if not preserve_backups:
+            shutil.rmtree(backup_dir, ignore_errors=True)
+
+
+def clean_download_staging(staging: Path) -> None:
+    # A terminated FFmpeg or yt-dlp child can briefly retain its file handles.
+    for attempt in range(6):
+        try:
+            shutil.rmtree(staging)
+            return
+        except FileNotFoundError:
+            if not staging.exists():
+                return
+            if attempt == 5:
+                raise
+        except PermissionError:
+            if attempt == 5:
+                raise
+        time.sleep(.2)
 
 
 def download_worker(job_id: str, url: str, output_format: str, destination: Path, title: str = "") -> None:
+    staging = None
+    cleanup_error = None
     try:
-        run_download(job_id, url, output_format, destination, title)
+        check_canceled(job_id)
+        staging = Path(tempfile.mkdtemp(prefix=".downloadable-", dir=destination))
+        outputs = run_download(job_id, url, output_format, staging, title)
+        with LOCK:
+            job = JOBS[job_id]
+            if job.get("cancel_requested"):
+                raise DownloadCanceled
+            publish_download(outputs, destination)
+            filename = outputs[0].name if len(outputs) == 1 else f"{len(outputs)} PNG files"
+            job.update(status="complete", progress=100, speed="", eta="",
+                       message="Download complete.", filename=filename, process=None)
+    except DownloadCanceled:
+        pass
     except Exception as error:
         log_error(f"Download failed for {url}", error)
-        update_job(job_id, status="error", error=f"Helper failed: {error}")
+        update_job(job_id, status="error", error=str(error), process=None)
+    finally:
+        if staging is not None:
+            try:
+                clean_download_staging(staging)
+            except OSError as error:
+                cleanup_error = f"Temporary files could not be removed from {staging}."
+                log_error(cleanup_error, error)
+        with LOCK:
+            job = JOBS[job_id]
+            if job.get("cancel_requested"):
+                message = "Download canceled."
+                if cleanup_error:
+                    message += f" {cleanup_error}"
+                job.update(status="error", error=message, message=message,
+                           speed="", eta="", process=None)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -728,20 +926,21 @@ class Handler(BaseHTTPRequestHandler):
         if not self.authenticated():
             return
         if self.path == "/state":
-            state = load_state()
-            save_state(state)
+            with STATE_LOCK:
+                state = load_state()
             with LOCK:
-                active = next(
-                    (job_id for job_id, job in JOBS.items() if job["status"] not in {"complete", "error"}),
-                    None,
-                )
+                active_jobs = [
+                    job_id for job_id, job in JOBS.items()
+                    if job["status"] not in {"complete", "error"}
+                ]
             self.send_json(
                 200,
                 {
                     "mp3_destination": state.get("mp3_destination", ""),
                     "mp4_destination": state.get("mp4_destination", ""),
                     "png_destination": state.get("png_destination", ""),
-                    "active_job": active,
+                    "active_job": active_jobs[0] if active_jobs else None,
+                    "active_jobs": active_jobs,
                     "version": json.loads((ROOT / "extension" / "manifest.json").read_text(encoding="utf-8")).get("version", ""),
                     "update": json.loads((ROOT / ".update-available.json").read_text(encoding="utf-8")) if (ROOT / ".update-available.json").exists() else None,
                 },
@@ -751,7 +950,8 @@ class Handler(BaseHTTPRequestHandler):
         if match:
             with LOCK:
                 job = JOBS.get(match.group(1))
-                payload = ({key: value for key, value in job.items() if key != "process"} if job else None)
+                payload = ({key: value for key, value in job.items()
+                            if key not in {"process", "cancel_requested", "download_key"}} if job else None)
             self.send_json(200, payload) if payload else self.send_json(404, {"error": "Job not found."})
             return
         self.send_json(404, {"error": "Not found."})
@@ -766,9 +966,7 @@ class Handler(BaseHTTPRequestHandler):
                 if output_format not in {"mp3", "mp4", "png"}:
                     raise ValueError("Choose an MP3, MP4, or PNG folder.")
                 destination = choose_folder(output_format)
-                state = load_state()
-                state[f"{output_format}_destination"] = destination
-                save_state(state)
+                remember_destination(output_format, destination)
                 self.send_json(200, {"format": output_format, "destination": destination})
                 return
             if self.path == "/download":
@@ -788,13 +986,16 @@ class Handler(BaseHTTPRequestHandler):
                 if not os.access(destination, os.W_OK):
                     raise ValueError("The selected destination is not writable.")
                 with LOCK:
-                    if any(job["status"] not in {"complete", "error"} for job in JOBS.values()):
-                        raise ValueError("Another download is already running.")
+                    active = [job for job in JOBS.values() if job["status"] not in {"complete", "error"}]
+                    download_key = (download_url, output_format, str(destination))
+                    if any(job.get("download_key") == download_key for job in active):
+                        raise ValueError("That download is already running.")
+                    if len(active) >= 3:
+                        raise ValueError("Three downloads are already running. Wait for one to finish.")
+                    remember_destination(output_format, str(destination))
                     job_id = str(uuid.uuid4())
-                    JOBS[job_id] = {"status": "queued", "progress": 0, "message": "Queued…"}
-                state = load_state()
-                state[f"{output_format}_destination"] = str(destination)
-                save_state(state)
+                    JOBS[job_id] = {"status": "queued", "progress": 0, "message": "Queued…",
+                                    "title": title, "format": output_format, "download_key": download_key}
                 threading.Thread(
                     target=download_worker,
                     args=(job_id, download_url, output_format, destination, title),
@@ -807,19 +1008,19 @@ class Handler(BaseHTTPRequestHandler):
                 job_id = cancel_match.group(1)
                 with LOCK:
                     job = JOBS.get(job_id)
-                    process = job.get("process") if job else None
+                    canceled = bool(job and job["status"] not in {"complete", "error"})
+                    if canceled:
+                        job.update(cancel_requested=True, status="canceling", message="Canceling…", speed="", eta="")
+                        if process := job.get("process"):
+                            stop_download_process(process)
                 if not job:
                     self.send_json(404, {"error": "Job not found."})
                     return
-                if process is not None and process.poll() is None:
-                    process.terminate()
-                    update_job(job_id, status="error", error="Download canceled.", message="Download canceled.", process=None)
-                else:
-                    update_job(job_id, status="error", error="Download canceled.", message="Download canceled.")
-                self.send_json(200, {"canceled": True})
+                self.send_json(200, {"canceled": canceled})
                 return
             if self.path == "/reset-settings":
-                save_state({})
+                with STATE_LOCK:
+                    save_state({})
                 self.send_json(200, {"reset": True})
                 return
             if self.path == "/open-logs":

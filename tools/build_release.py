@@ -45,7 +45,7 @@ PLATFORM_FILES = {
 }
 
 
-def package_files(platform: str = "all") -> list[Path]:
+def package_files(platform: str = "all", *, include_tests: bool = False) -> list[Path]:
     allowed = PLATFORM_FILES.get(platform)
     files = [
         ROOT / name
@@ -53,16 +53,18 @@ def package_files(platform: str = "all") -> list[Path]:
         if allowed is None or name not in PLATFORM_FILES["windows"] | PLATFORM_FILES["macos"] | PLATFORM_FILES["linux"] or name in allowed
     ]
     files.extend(path for path in (ROOT / "extension").rglob("*") if path.is_file())
+    if include_tests:
+        files.extend(ROOT / "tests" / name for name in ("test_helper.py", "media_smoke.py"))
     return sorted(
         (path for path in files if path.name != "config.js" and not path.name.startswith(".!") and path.name != ".DS_Store"),
         key=lambda path: path.relative_to(ROOT).as_posix(),
     )
 
 
-def build(output: Path, platform: str = "all") -> None:
+def build(output: Path, platform: str = "all", *, include_tests: bool = False) -> None:
     output.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
-        for path in package_files(platform):
+        for path in package_files(platform, include_tests=include_tests):
             relative = path.relative_to(ROOT).as_posix()
             info = zipfile.ZipInfo.from_file(path, relative)
             info.create_system = 3
@@ -79,6 +81,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("output", nargs="?", type=Path)
     parser.add_argument("--platform", choices=("all", "windows", "macos", "linux"), default="all")
+    parser.add_argument("--include-tests", action="store_true", help="Include the local validation suite in a test ZIP.")
     args = parser.parse_args()
     if args.output is None:
         # Keep the extracted install folder stable across updates. The
@@ -90,8 +93,9 @@ def main() -> None:
             "macos": "Downloadable-MacOS",
             "linux": "Downloadable-Linux",
         }
-        args.output = ROOT / f"{names[args.platform]}.zip"
-    build(args.output.resolve(), args.platform)
+        suffix = "-test" if args.include_tests else ""
+        args.output = ROOT / f"{names[args.platform]}{suffix}.zip"
+    build(args.output.resolve(), args.platform, include_tests=args.include_tests)
 
 
 if __name__ == "__main__":

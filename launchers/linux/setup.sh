@@ -11,6 +11,15 @@ command -v ffmpeg >/dev/null 2>&1 || {
   exit 1
 }
 
+# Stop helpers from older installs before replacing the environment. Keep the
+# match scoped to Downloadable helper command lines, not every Python process.
+OLD_HELPERS="$(ps -eo pid=,args= | awk -v self="$$" '$1 != self && /helper\/helper\.py/ && /[Dd]ownloadable|personal-media-downloader/ {print $1}')"
+if [[ -n "$OLD_HELPERS" ]]; then
+  kill -TERM $OLD_HELPERS 2>/dev/null || true
+  sleep 1
+  kill -KILL $OLD_HELPERS 2>/dev/null || true
+fi
+
 python3 -m venv .venv
 .venv/bin/python -m pip install --upgrade pip yt-dlp mutagen curl-cffi
 
