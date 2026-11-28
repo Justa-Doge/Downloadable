@@ -182,11 +182,11 @@ function useUrl(value, announce = true) {
   currentUrl = type ? candidate : "";
   setPhotoMode(type === "photo");
   downloadButtons.forEach((button) => {
-    button.disabled = !currentUrl || type === "sound";
+    button.disabled = !currentUrl || (type === "sound" && button.dataset.format !== "mp3");
   });
   if (!announce) return;
   if (type === "sound") {
-    setStatus("Open a TikTok video using this sound, then choose MP3.", "error");
+    setStatus("TikTok sound page detected. Try MP3; TikTok may restrict direct sound downloads.");
   } else if (type === "video" || type === "photo") {
     setStatus("Link ready.", "success");
   } else {
@@ -292,11 +292,27 @@ checkUpdateButton.addEventListener("click", async () => {
   updateStatus.textContent = "Checking for updates…";
   updateStatus.className = "update-status";
   try {
-    const result = await helperRequest("/check-update", { method: "POST", body: "{}" });
-    showUpdateStatus(result.status === "staged" ? result : null, result.current || "");
-    setStatus(result.status === "staged" ? `Downloadable ${result.version} is ready. Restart the helper to apply it.` : "Downloadable is up to date.", "success");
+    const result = await helperRequest("/check-update", { method: "POST", body: "{}", timeoutMs: 60000 });
+    if (result.status === "staged") {
+      showUpdateStatus(result, result.current || "");
+      setStatus(`Downloadable ${result.version} is ready. Restart the helper to apply it.`, "success");
+    } else if (result.status === "current") {
+      showUpdateStatus(null, result.current || "");
+      setStatus("Downloadable is up to date.", "success");
+    } else if (result.status === "checking") {
+      updateStatus.textContent = "An update check is already running.";
+      updateStatus.className = "update-status";
+      setStatus("Wait for the current update check to finish.");
+    } else {
+      const detail = result.error || (result.status === "unavailable"
+        ? "No public update information is available right now."
+        : "The helper returned an unexpected update status.");
+      updateStatus.textContent = `Update check failed: ${detail}`;
+      updateStatus.className = "update-status failed";
+      setStatus(detail, "error");
+    }
   } catch (error) {
-    updateStatus.textContent = "Update check failed.";
+    updateStatus.textContent = `Update check failed: ${error.message}`;
     updateStatus.className = "update-status failed";
     setStatus(error.message, "error");
   } finally {
@@ -370,8 +386,8 @@ downloadButtons.forEach((button) => {
       setStatus("Paste a supported HTTPS media link first.", "error");
       return;
     }
-    if (mediaType(currentUrl) === "sound") {
-      setStatus("Sound pages cannot be downloaded directly. Open a video using this sound, then choose MP3.", "error");
+    if (mediaType(currentUrl) === "sound" && format !== "mp3") {
+      setStatus("TikTok sound pages only support MP3.", "error");
       return;
     }
     if (!destinations[format]) {
@@ -391,7 +407,7 @@ downloadButtons.forEach((button) => {
     } catch (error) {
       setStatus(error.message, "error");
     } finally {
-      button.disabled = !currentUrl || mediaType(currentUrl) === "sound";
+      button.disabled = !currentUrl || (mediaType(currentUrl) === "sound" && format !== "mp3");
     }
   });
 });

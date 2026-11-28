@@ -787,44 +787,79 @@ def run_download(job_id: str, url: str, output_format: str, destination: Path, t
     return [result_path]
 
 
-def publish_download(outputs: list[Path], destination: Path) -> None:
-    """Publish a finished job and roll back a partially saved photo batch."""
-    if len(outputs) == 1:
-        outputs[0].replace(destination / outputs[0].name)
-        return
+def publish_file_without_overwrite(output: Path, target: Path) -> None:
+    """Move a staged file into place without ever replacing another file."""
+    try:
+        os.link(output, target)
+    except FileExistsError:
+        raise
+    except OSError:
+        # Some removable or network filesystems do not support hard links.
+        # Create the destination exclusively there, then copy the finished file.
+        descriptor = os.open(target, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o666)
+        try:
+            with os.fdopen(descriptor, "wb") as destination_stream:
+                descriptor = -1
+                with output.open("rb") as source_stream:
+                    shutil.copyfileobj(source_stream, destination_stream, length=1024 * 1024)
+        except BaseException:
+            if descriptor >= 0:
+                os.close(descriptor)
+            target.unlink(missing_ok=True)
+            raise
+    try:
+        output.unlink(missing_ok=True)
+    except OSError:
+        # The published destination is complete; staging cleanup retries later.
+        pass
 
-    backup_dir = Path(tempfile.mkdtemp(prefix=".downloadable-backup-", dir=destination))
-    backups: dict[Path, Path] = {}
+
+def publish_download(outputs: list[Path], destination: Path) -> list[Path]:
+    """Publish files without replacing existing user files."""
     published: list[tuple[Path, Path]] = []
-    preserve_backups = False
+    reserved: set[Path] = set()
     try:
         for output in outputs:
-            target = destination / output.name
-            if target.is_symlink() or (target.exists() and not target.is_file()):
-                raise OSError(f"Cannot replace {target.name} with a photo.")
-            if target.exists():
-                backup = backup_dir / output.name
-                shutil.copy2(target, backup)
-                backups[target] = backup
-        for output in outputs:
-            target = destination / output.name
-            output.replace(target)
-            published.append((output, target))
-    except OSError as error:
+            number = 1
+            while True:
+                if number == 1:
+                    target = destination / output.name
+                else:
+                    target = destination / f"{output.stem} ({number}){output.suffix}"
+                if target.exists() or target.is_symlink() or target in reserved:
+                    number += 1
+                    continue
+                try:
+                    # The hard-link path is atomic; exclusive-copy fallback
+                    # keeps removable filesystems safe without overwriting.
+                    publish_file_without_overwrite(output, target)
+                except FileExistsError:
+                    number += 1
+                    continue
+                except OSError as error:
+                    raise OSError(
+                        f"Could not safely save {output.name} without replacing an existing file. "
+                        "Try a folder on a local filesystem that supports hard links."
+                    ) from error
+                try:
+                    output.unlink()
+                except OSError:
+                    target.unlink(missing_ok=True)
+                    raise
+                reserved.add(target)
+                published.append((output, target))
+                break
+    except OSError:
+        rollback_errors: list[Path] = []
         for output, target in reversed(published):
             try:
-                if target in backups:
-                    backups[target].replace(target)
-                else:
-                    target.replace(output)
+                target.replace(output)
             except OSError:
-                preserve_backups = True
-        if preserve_backups:
-            raise OSError(f"Could not restore the photo batch. Recovery files: {backup_dir}") from error
+                rollback_errors.append(target)
+        if rollback_errors:
+            raise OSError("Could not roll back files saved here: " + ", ".join(path.name for path in rollback_errors))
         raise
-    finally:
-        if not preserve_backups:
-            shutil.rmtree(backup_dir, ignore_errors=True)
+    return [target for _, target in published]
 
 
 def clean_download_staging(staging: Path) -> None:
@@ -855,8 +890,8 @@ def download_worker(job_id: str, url: str, output_format: str, destination: Path
             job = JOBS[job_id]
             if job.get("cancel_requested"):
                 raise DownloadCanceled
-            publish_download(outputs, destination)
-            filename = outputs[0].name if len(outputs) == 1 else f"{len(outputs)} PNG files"
+            published = publish_download(outputs, destination)
+            filename = published[0].name if len(published) == 1 else f"{len(published)} PNG files"
             job.update(status="complete", progress=100, speed="", eta="",
                        message="Download complete.", filename=filename, process=None)
     except DownloadCanceled:

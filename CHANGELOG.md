@@ -7,6 +7,9 @@
 
 ## Unreleased
 
+- Completed downloads now use a numbered filename when the original name already exists, preserving the existing file.
+- Update checks now distinguish failures from an up-to-date result and allow up to 60 seconds for the check and archive download.
+- TikTok `/music/` links can be submitted as MP3 downloads; MP4 remains disabled for those links.
 - The 1.5.4 macOS setup now unloads and stops the previous Downloadable helper before rebuilding its environment, then starts the replacement LaunchAgent and checks its reported version and job state.
 - Started the 1.6 release line. Platform setup now stops older Downloadable helper processes before replacing the runtime, then installs and starts the new helper as a background service.
 
