@@ -40,8 +40,12 @@ TOKEN_FILE = ROOT / ".helper-token"
 STATE_FILE = ROOT / ".state.json"
 CHROMEOS_DOWNLOADS = Path("/mnt/chromeos/MyFiles/Downloads")
 DOWNLOAD_ROOT = CHROMEOS_DOWNLOADS if CHROMEOS_DOWNLOADS.is_dir() else Path.home() / "Downloads"
-DEFAULT_DESTINATION = DOWNLOAD_ROOT / "MUSIC!!!!!"
-DEFAULT_VIDEO_DESTINATION = (CHROMEOS_DOWNLOADS if CHROMEOS_DOWNLOADS.is_dir() else Path.home() / "Movies")
+if os.name == "nt":
+    DEFAULT_DESTINATION = Path.home() / "Music"
+    DEFAULT_VIDEO_DESTINATION = Path.home() / "Videos"
+else:
+    DEFAULT_DESTINATION = DOWNLOAD_ROOT / "Music"
+    DEFAULT_VIDEO_DESTINATION = CHROMEOS_DOWNLOADS if CHROMEOS_DOWNLOADS.is_dir() else Path.home() / "Movies"
 TOKEN = TOKEN_FILE.read_text(encoding="utf-8").strip() if TOKEN_FILE.exists() else ""
 JOBS: dict[str, dict] = {}
 LOCK = threading.Lock()
